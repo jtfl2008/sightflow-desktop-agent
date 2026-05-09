@@ -11,7 +11,42 @@ interface LogEntry {
 
 type EngineStatus = 'idle' | 'running' | 'error'
 type View = 'control' | 'settings'
-type AppType = 'wechat' | 'wework'
+type AppType = 'wechat' | 'wework' | 'dingtalk' | 'lark' | 'slack' | 'telegram' | 'generic'
+
+type CaptureStrategy = 'auto' | 'vlm' | 'box-select'
+
+interface ScreenRect {
+  x: number
+  y: number
+  width: number
+  height: number
+}
+
+interface BoxRegions {
+  contactList: ScreenRect
+  chatMain: ScreenRect
+  inputBox: ScreenRect
+  unreadIndicator: ScreenRect | null
+  displayId?: number
+  scaleFactor?: number
+  capturedAt: number
+}
+
+const APP_TYPE_LABELS: Record<AppType, string> = {
+  wechat: '微信',
+  wework: '企业微信',
+  dingtalk: '钉钉',
+  lark: '飞书 / Lark',
+  slack: 'Slack',
+  telegram: 'Telegram',
+  generic: '其他桌面应用'
+}
+
+const VLM_SUPPORTED_APPS: AppType[] = ['wechat', 'wework']
+
+function isVlmSupported(appType: AppType): boolean {
+  return VLM_SUPPORTED_APPS.includes(appType)
+}
 
 interface ProviderSchemaField {
   type: 'string' | 'password' | 'select' | 'boolean'
@@ -42,6 +77,11 @@ interface InstalledProviderInfo {
   installedAt: string
 }
 
+interface PerAppCapture {
+  strategy: CaptureStrategy
+  regions: BoxRegions | null
+}
+
 interface AppSettings {
   locale: 'zh' | 'en'
   appType: AppType
@@ -53,6 +93,8 @@ interface AppSettings {
     installed: InstalledProviderInfo | null
     config: Record<string, any>
   }
+  defaultCaptureStrategy: CaptureStrategy
+  capture: Partial<Record<AppType, PerAppCapture>>
 }
 
 const PROVIDER_NAME_LABELS: Record<string, string> = {
@@ -78,14 +120,28 @@ const StopIcon = () => (
 )
 
 const GearIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <circle cx="12" cy="12" r="3" />
     <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
   </svg>
 )
 
 const BackIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
     <path d="M19 12H5M12 19l-7-7 7-7" />
   </svg>
 )
@@ -97,12 +153,9 @@ function App() {
   // Sync UI status with engine state changes triggered out-of-band
   // (e.g. remote OpenClaw start/pause via the local skill HTTP server).
   useEffect(() => {
-    const cleanup = window.electron?.on(
-      'engine:state',
-      (data: { status: 'running' | 'idle' }) => {
-        setStatus(data.status === 'running' ? 'running' : 'idle')
-      }
-    )
+    const cleanup = window.electron?.on('engine:state', (data: { status: 'running' | 'idle' }) => {
+      setStatus(data.status === 'running' ? 'running' : 'idle')
+    })
     return cleanup
   }, [])
 
@@ -130,11 +183,7 @@ function App() {
       </div>
 
       {view === 'control' && (
-        <BottomBar
-          status={status}
-          setStatus={setStatus}
-          onSettings={() => setView('settings')}
-        />
+        <BottomBar status={status} setStatus={setStatus} onSettings={() => setView('settings')} />
       )}
 
       <Toast />
@@ -142,7 +191,10 @@ function App() {
   )
 }
 
-function getProviderDisplayName(provider: InstalledProviderInfo | null | undefined, manifest: ProviderManifest | null) {
+function getProviderDisplayName(
+  provider: InstalledProviderInfo | null | undefined,
+  manifest: ProviderManifest | null
+) {
   return (
     (provider?.id && PROVIDER_NAME_LABELS[provider.id]) ||
     (manifest?.id && PROVIDER_NAME_LABELS[manifest.id]) ||
@@ -305,15 +357,31 @@ function SettingsPanel() {
   /** true 表示当前没装自定义 provider，正在用内置 doubao 默认值 */
   const [isBuiltinDefault, setIsBuiltinDefault] = useState(false)
 
+  // capture / 框选策略
+  const [defaultCaptureStrategy, setDefaultCaptureStrategy] = useState<CaptureStrategy>('auto')
+  const [perAppStrategy, setPerAppStrategy] = useState<CaptureStrategy>('auto')
+  const [perAppRegions, setPerAppRegions] = useState<BoxRegions | null>(null)
+  const [openingWizard, setOpeningWizard] = useState(false)
+
+  // settings 加载 + per-app 切换：每次 appType 变了就重新读 capture[appType] 状态
+  const reloadCaptureForApp = useCallback((settings: AppSettings, type: AppType) => {
+    const entry = settings.capture?.[type]
+    setPerAppStrategy(entry?.strategy ?? 'auto')
+    setPerAppRegions(entry?.regions ?? null)
+  }, [])
+
   useEffect(() => {
     const load = async () => {
       const settings = (await window.electron?.invoke('settings:getAll')) as AppSettings | undefined
       if (settings) {
-        setAppType(settings.appType || 'wechat')
+        const initialAppType = settings.appType || 'wechat'
+        setAppType(initialAppType)
         setVisionApiKey(settings.vision?.apiKey || '')
         setProviderManifestUrl(settings.chatProvider?.manifestUrl || '')
         setInstalledProvider(settings.chatProvider?.installed || null)
         setProviderConfig(settings.chatProvider?.config || {})
+        setDefaultCaptureStrategy(settings.defaultCaptureStrategy || 'auto')
+        reloadCaptureForApp(settings, initialAppType)
       }
 
       const providerInfo = (await window.electron?.invoke('provider:getInstalled')) as {
@@ -333,7 +401,33 @@ function SettingsPanel() {
     }
 
     void load()
-  }, [])
+  }, [reloadCaptureForApp])
+
+  // 切目标 app 时，把对应的 capture 配置同步到 UI
+  useEffect(() => {
+    let cancelled = false
+    void (async () => {
+      const settings = (await window.electron?.invoke('settings:getAll')) as AppSettings | undefined
+      if (cancelled || !settings) return
+      reloadCaptureForApp(settings, appType)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [appType, reloadCaptureForApp])
+
+  // 监听 main 进程发的"区域已更新"事件——比如向导刚跑完，立即刷新 chip
+  useEffect(() => {
+    const cleanup = window.electron?.on(
+      'capture:regions-updated',
+      (data: { appType: AppType; regions: BoxRegions | null }) => {
+        if (data.appType === appType) {
+          setPerAppRegions(data.regions)
+        }
+      }
+    )
+    return cleanup
+  }, [appType])
 
   const handleSaveVision = useCallback(async () => {
     const payload: Partial<AppSettings> = {
@@ -358,7 +452,10 @@ function SettingsPanel() {
 
     setInstalling(true)
     try {
-      const result = await window.electron?.invoke('provider:installFromUrl', providerManifestUrl.trim())
+      const result = await window.electron?.invoke(
+        'provider:installFromUrl',
+        providerManifestUrl.trim()
+      )
       if (!result?.success) {
         showToast(result?.error || t('settings.providerInstall.failed'), 'error')
         return
@@ -401,13 +498,57 @@ function SettingsPanel() {
     })
 
     showToast(t('settings.provider.saved'), 'success')
-  }, [
-    installedManifest,
-    installedProvider,
-    providerConfig,
-    providerManifestUrl,
-    isBuiltinDefault
-  ])
+  }, [installedManifest, installedProvider, providerConfig, providerManifestUrl, isBuiltinDefault])
+
+  // 切换默认抓取策略 → 立即写盘，避免依赖 vision 卡的"保存"按钮
+  const handleSetDefaultStrategy = useCallback(async (next: CaptureStrategy) => {
+    setDefaultCaptureStrategy(next)
+    await window.electron?.invoke('settings:set', { defaultCaptureStrategy: next })
+  }, [])
+
+  // 切换当前 app 的策略
+  const handleSetPerAppStrategy = useCallback(
+    async (next: CaptureStrategy) => {
+      setPerAppStrategy(next)
+      const current = (await window.electron?.invoke('settings:getAll')) as AppSettings | undefined
+      const existing = current?.capture?.[appType] || null
+      await window.electron?.invoke('settings:set', {
+        capture: {
+          [appType]: {
+            strategy: next,
+            regions: existing?.regions ?? null
+          }
+        }
+      })
+    },
+    [appType]
+  )
+
+  const handleOpenWizard = useCallback(async () => {
+    setOpeningWizard(true)
+    try {
+      const result = (await window.electron?.invoke('capture:openSetupWizard', {
+        appType
+      })) as { success: boolean; reason?: string; regions?: BoxRegions } | undefined
+
+      if (result?.success && result.regions) {
+        setPerAppRegions(result.regions)
+        showToast('已保存框选区域', 'success')
+      } else if (result?.reason === 'cancelled' || result?.reason === 'closed') {
+        showToast('框选已取消', 'error')
+      } else {
+        showToast('框选失败', 'error')
+      }
+    } finally {
+      setOpeningWizard(false)
+    }
+  }, [appType])
+
+  const handleResetRegions = useCallback(async () => {
+    await window.electron?.invoke('capture:resetRegions', appType)
+    setPerAppRegions(null)
+    showToast('已清除框选区域', 'success')
+  }, [appType])
 
   const handleTestConnection = useCallback(async () => {
     if (!visionApiKey) return
@@ -440,9 +581,16 @@ function SettingsPanel() {
             value={appType}
             onChange={(e) => setAppType(e.target.value as AppType)}
           >
-            <option value="wechat">微信</option>
-            <option value="wework">企业微信</option>
+            {(Object.keys(APP_TYPE_LABELS) as AppType[]).map((type) => (
+              <option key={type} value={type}>
+                {APP_TYPE_LABELS[type]}
+                {!isVlmSupported(type) ? ' （框选）' : ''}
+              </option>
+            ))}
           </select>
+          <div className="form-hint">
+            微信 / 企业微信 默认走自动识别；其他应用通过手动框选关键区域接入。
+          </div>
         </div>
 
         <div className="form-group">
@@ -482,6 +630,18 @@ function SettingsPanel() {
         </div>
       </div>
 
+      <CaptureStrategyCard
+        appType={appType}
+        defaultStrategy={defaultCaptureStrategy}
+        perAppStrategy={perAppStrategy}
+        regions={perAppRegions}
+        openingWizard={openingWizard}
+        onSetDefaultStrategy={handleSetDefaultStrategy}
+        onSetPerAppStrategy={handleSetPerAppStrategy}
+        onOpenWizard={handleOpenWizard}
+        onResetRegions={handleResetRegions}
+      />
+
       <div className="card">
         <div className="card-title">{t('settings.chatProvider')}</div>
 
@@ -517,9 +677,12 @@ function SettingsPanel() {
           <div className="form-group">
             <label className="form-label">{t('settings.providerInstalled')}</label>
             <div className="form-hint">
-              {getProviderDisplayName(installedProvider, installedManifest)} · {installedProvider.version}
+              {getProviderDisplayName(installedProvider, installedManifest)} ·{' '}
+              {installedProvider.version}
             </div>
-            <div className="form-hint">{new Date(installedProvider.installedAt).toLocaleString()}</div>
+            <div className="form-hint">
+              {new Date(installedProvider.installedAt).toLocaleString()}
+            </div>
           </div>
         ) : null}
 
@@ -535,13 +698,144 @@ function SettingsPanel() {
               />
             ))}
 
-            <button className="btn btn-primary" onClick={handleSaveProvider} style={{ width: '100%' }}>
+            <button
+              className="btn btn-primary"
+              onClick={handleSaveProvider}
+              style={{ width: '100%' }}
+            >
               {t('settings.provider.save')}
             </button>
           </>
         ) : (
           <div className="form-hint">{t('settings.providerInstall.required')}</div>
         )}
+      </div>
+    </div>
+  )
+}
+
+interface CaptureStrategyCardProps {
+  appType: AppType
+  defaultStrategy: CaptureStrategy
+  perAppStrategy: CaptureStrategy
+  regions: BoxRegions | null
+  openingWizard: boolean
+  onSetDefaultStrategy: (s: CaptureStrategy) => void
+  onSetPerAppStrategy: (s: CaptureStrategy) => void
+  onOpenWizard: () => void
+  onResetRegions: () => void
+}
+
+// 解析"实际生效的策略"，让 UI 上能展示比 perAppStrategy 更具体的选择。
+function effectiveStrategy(
+  appType: AppType,
+  perApp: CaptureStrategy,
+  defaultStrategy: CaptureStrategy
+): 'vlm' | 'box-select' {
+  const eff = perApp === 'auto' ? defaultStrategy : perApp
+  if (eff === 'auto') {
+    return isVlmSupported(appType) ? 'vlm' : 'box-select'
+  }
+  return eff
+}
+
+function CaptureStrategyCard({
+  appType,
+  defaultStrategy,
+  perAppStrategy,
+  regions,
+  openingWizard,
+  onSetDefaultStrategy,
+  onSetPerAppStrategy,
+  onOpenWizard,
+  onResetRegions
+}: CaptureStrategyCardProps): React.JSX.Element {
+  const isVlm = isVlmSupported(appType)
+  const eff = effectiveStrategy(appType, perAppStrategy, defaultStrategy)
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-title">抓取方式</div>
+
+      <div className="form-hint" style={{ marginBottom: 12 }}>
+        当前应用：<strong style={{ color: '#cbd5e1' }}>{APP_TYPE_LABELS[appType]}</strong>
+        ，实际生效：
+        <strong style={{ color: '#38bdf8' }}>
+          {eff === 'vlm' ? '自动识别（VLM）' : '手动框选'}
+        </strong>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">该应用的策略</label>
+        <select
+          className="form-input"
+          value={perAppStrategy}
+          onChange={(e) => onSetPerAppStrategy(e.target.value as CaptureStrategy)}
+        >
+          <option value="auto">智能默认（推荐）</option>
+          <option value="vlm" disabled={!isVlm}>
+            自动识别 VLM{!isVlm ? '（仅微信 / 企业微信）' : ''}
+          </option>
+          <option value="box-select">手动框选</option>
+        </select>
+        <div className="form-hint">
+          智能默认：微信走 VLM；其他应用走框选；VLM 失败时自动切换到框选并记住选择。
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label className="form-label">框选区域</label>
+        {regions ? (
+          <div
+            className="form-hint"
+            style={{
+              padding: '8px 10px',
+              background: 'rgba(30, 41, 59, 0.6)',
+              borderRadius: 6,
+              color: '#cbd5e1'
+            }}
+          >
+            ✓ 已配置 {regions.unreadIndicator ? '4' : '3'}/4 个区域
+            {regions.displayId !== undefined ? ` · 显示器 ${regions.displayId}` : ''}
+            <br />
+            <span style={{ color: '#94a3b8' }}>
+              捕获时间：{new Date(regions.capturedAt).toLocaleString()}
+            </span>
+          </div>
+        ) : (
+          <div className="form-hint">尚未配置：点击下方按钮逐步绘制 4 个区域。</div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button
+          className="btn btn-primary"
+          onClick={onOpenWizard}
+          disabled={openingWizard}
+          style={{ flex: 1 }}
+        >
+          {openingWizard ? '正在打开...' : regions ? '重新框选' : '开始框选'}
+        </button>
+        {regions ? (
+          <button className="btn btn-secondary" onClick={onResetRegions}>
+            清除
+          </button>
+        ) : null}
+      </div>
+
+      <hr style={{ margin: '16px 0', border: '1px solid rgba(148,163,184,0.15)' }} />
+
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="form-label">全局默认（仅当上方为「智能默认」时生效）</label>
+        <select
+          className="form-input"
+          value={defaultStrategy}
+          onChange={(e) => onSetDefaultStrategy(e.target.value as CaptureStrategy)}
+        >
+          <option value="auto">智能默认（按应用类型决定）</option>
+          <option value="vlm">优先 VLM</option>
+          <option value="box-select">优先框选</option>
+        </select>
       </div>
     </div>
   )
