@@ -17,6 +17,20 @@ class MemoryAuditBackend {
   }
 }
 
+class SeededMemoryAuditBackend {
+  constructor(private records: AuditRecord[]) {}
+
+  get(key: 'records'): AuditRecord[] {
+    assert.equal(key, 'records')
+    return this.records
+  }
+
+  set(key: 'records', value: AuditRecord[]): void {
+    assert.equal(key, 'records')
+    this.records = value
+  }
+}
+
 function fixedNow(): Date {
   return new Date('2026-05-17T09:30:00.000Z')
 }
@@ -103,8 +117,62 @@ function testProviderLifecycleAuditRedaction(): void {
   )
 }
 
+function testProviderLifecycleRedactionSummaryStrictExport(): void {
+  const privateNote = 'PRIVATE provider lifecycle extra note'
+  const nestedArrayNote = 'provider lifecycle nested array object'
+  const store = new AuditStore({
+    backend: new SeededMemoryAuditBackend([
+      {
+        id: 'provider-lifecycle-malformed-summary',
+        category: 'provider',
+        action: 'provider_install',
+        severity: 'info',
+        occurredAt: fixedNow().toISOString(),
+        metadata: {
+          redactionExportSummary: {
+            status: 'passed',
+            blockedTypes: [{ nested: nestedArrayNote }],
+            omittedFieldPaths: [],
+            unknownFieldCount: 0,
+            checkedAt: fixedNow().toISOString(),
+            extra: {
+              note: privateNote
+            }
+          }
+        }
+      }
+    ]),
+    now: fixedNow
+  })
+
+  const json = store.exportJson()
+  const markdown = store.exportMarkdown()
+  const parsed = JSON.parse(json)
+
+  assert.equal(json.includes(privateNote), false)
+  assert.equal(markdown.includes(privateNote), false)
+  assert.equal(json.includes(nestedArrayNote), false)
+  assert.equal(markdown.includes(nestedArrayNote), false)
+  assert.equal(parsed.blocked, true)
+  assert.deepEqual(parsed.records, [])
+  assert.equal(parsed.redaction.status, 'blocked')
+  assert.equal(parsed.redaction.unknownFieldCount, 2)
+  assert.ok(parsed.redaction.blockedTypes.includes('unknown_nested_object'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.redactionExportSummary.extra'
+    )
+  )
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.redactionExportSummary.blockedTypes[0]'
+    )
+  )
+}
+
 function main(): void {
   testProviderLifecycleAuditRedaction()
+  testProviderLifecycleRedactionSummaryStrictExport()
   console.log('provider lifecycle audit mock tests passed')
 }
 

@@ -190,12 +190,66 @@ function testRawBackendCustomerProfileScalarExportRedaction(): void {
   )
 }
 
+function testRedactionExportSummaryStrictExportRedaction(): void {
+  const privateNote = 'PRIVATE provider lifecycle note hidden in redaction summary'
+  const nestedArrayNote = 'nested blocked type object hidden in array'
+  const store = new AuditStore({
+    backend: new MemoryAuditBackend([
+      {
+        id: 'raw-redaction-summary',
+        category: 'provider',
+        action: 'provider_install',
+        severity: 'info',
+        occurredAt: fixedNow().toISOString(),
+        metadata: {
+          redactionExportSummary: {
+            status: 'passed',
+            blockedTypes: [{ nested: nestedArrayNote }],
+            omittedFieldPaths: [],
+            unknownFieldCount: 0,
+            checkedAt: fixedNow().toISOString(),
+            extra: {
+              note: privateNote
+            }
+          }
+        }
+      }
+    ]),
+    now: fixedNow
+  })
+
+  const json = store.exportJson()
+  const markdown = store.exportMarkdown()
+  const parsed = JSON.parse(json)
+
+  assert.equal(json.includes(privateNote), false)
+  assert.equal(markdown.includes(privateNote), false)
+  assert.equal(json.includes(nestedArrayNote), false)
+  assert.equal(markdown.includes(nestedArrayNote), false)
+  assert.equal(parsed.blocked, true)
+  assert.deepEqual(parsed.records, [])
+  assert.equal(parsed.redaction.status, 'blocked')
+  assert.equal(parsed.redaction.unknownFieldCount, 2)
+  assert.ok(parsed.redaction.blockedTypes.includes('unknown_nested_object'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.redactionExportSummary.extra'
+    )
+  )
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.redactionExportSummary.blockedTypes[0]'
+    )
+  )
+}
+
 function main(): void {
   testRecentRecordsSurviveStoreReload()
   testMaxRecordsIsBounded()
   testExportsRedactSecretsAndClipboardHistory()
   testRawBackendSourceSummaryExportRedaction()
   testRawBackendCustomerProfileScalarExportRedaction()
+  testRedactionExportSummaryStrictExportRedaction()
   console.log('audit store mock tests passed')
 }
 

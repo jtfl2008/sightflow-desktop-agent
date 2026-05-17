@@ -34,19 +34,18 @@ const LOCAL_PATH_PATTERN = /(?:\/Users\/|\/home\/|\/workspace\/|[A-Z]:\\)/i
 const ALLOWED_NESTED_OBJECT_PATHS = new Set([
   'metadata.artifactHashes',
   'metadata.channelContext',
-  'metadata.matchedKnowledge',
-  'metadata.redactionExportSummary'
+  'metadata.matchedKnowledge'
 ])
 
 const ALLOWED_NESTED_OBJECT_PREFIXES = [
   'metadata.artifactHashes.',
   'metadata.channelContext.',
-  'metadata.matchedKnowledge.',
-  'metadata.redactionExportSummary.'
+  'metadata.matchedKnowledge.'
 ]
 
 const CUSTOMER_PROFILE_SOURCE_SUMMARY_PATH = 'metadata.customerProfile.sourceSummary'
 const CUSTOMER_PROFILE_PATH = 'metadata.customerProfile'
+const REDACTION_EXPORT_SUMMARY_PATH = 'metadata.redactionExportSummary'
 const SAFE_CUSTOMER_PROFILE_KEYS = new Set([
   'profileId',
   'version',
@@ -174,6 +173,9 @@ function redactValue(
   if (normalizedPath === CUSTOMER_PROFILE_SOURCE_SUMMARY_PATH) {
     return redactCustomerProfileSourceSummary(value, recordPath, state)
   }
+  if (normalizedPath === REDACTION_EXPORT_SUMMARY_PATH) {
+    return redactRedactionExportSummary(value, recordPath, state)
+  }
   if (typeof value === 'string') return sanitizeString(value, recordPath, state)
   if (typeof value === 'number' || typeof value === 'boolean') return value
   if (Array.isArray(value)) {
@@ -254,6 +256,77 @@ function redactCustomerProfileSafeField(
 
   addBlocked(state, 'full_profile', recordPath)
   return undefined
+}
+
+function redactRedactionExportSummary(
+  value: unknown,
+  recordPath: string,
+  state: RedactionState
+): unknown {
+  if (!isPlainRecord(value)) {
+    addUnknownNestedObject(state, recordPath)
+    return undefined
+  }
+
+  const out: Partial<AuditExportRedactionSummary> = {}
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = `${recordPath}.${key}`
+    switch (key) {
+      case 'status':
+        if (child === 'passed' || child === 'blocked') {
+          out.status = child
+        } else {
+          addUnknownNestedObject(state, childPath)
+        }
+        break
+      case 'blockedTypes':
+        out.blockedTypes = redactStringArray(child, childPath, state) as RedactionExportBlockedType[]
+        break
+      case 'omittedFieldPaths':
+        out.omittedFieldPaths = redactStringArray(child, childPath, state)
+        break
+      case 'unknownFieldCount':
+        if (typeof child === 'number' && Number.isFinite(child)) {
+          out.unknownFieldCount = child
+        } else {
+          addUnknownNestedObject(state, childPath)
+        }
+        break
+      case 'checkedAt':
+        if (typeof child === 'string') {
+          out.checkedAt = sanitizeString(child, childPath, state)
+        } else {
+          addUnknownNestedObject(state, childPath)
+        }
+        break
+      default:
+        addUnknownNestedObject(state, childPath)
+    }
+  }
+
+  return out
+}
+
+function redactStringArray(
+  value: unknown,
+  recordPath: string,
+  state: RedactionState
+): string[] {
+  if (!Array.isArray(value)) {
+    addUnknownNestedObject(state, recordPath)
+    return []
+  }
+
+  const out: string[] = []
+  value.forEach((item, index) => {
+    const itemPath = `${recordPath}[${index}]`
+    if (typeof item !== 'string') {
+      addUnknownNestedObject(state, itemPath)
+      return
+    }
+    out.push(sanitizeString(item, itemPath, state))
+  })
+  return out
 }
 
 function redactCustomerProfileSourceSummary(
@@ -338,6 +411,11 @@ function isAllowedNestedObjectPath(path: string): boolean {
     ALLOWED_NESTED_OBJECT_PATHS.has(path) ||
     ALLOWED_NESTED_OBJECT_PREFIXES.some((prefix) => path.startsWith(prefix))
   )
+}
+
+function addUnknownNestedObject(state: RedactionState, path: string): void {
+  state.unknownFieldCount += 1
+  addBlocked(state, 'unknown_nested_object', path)
 }
 
 function addBlocked(

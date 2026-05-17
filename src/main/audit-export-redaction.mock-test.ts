@@ -340,6 +340,64 @@ function testUnknownNestedExportObjectBlocksRecords(): void {
   assert.ok(parsed.redaction.omittedFieldPaths.includes('records[0].metadata.unexpectedNested'))
 }
 
+function testRedactionExportSummaryNestedObjectBlocksRecords(): void {
+  const privateNote = 'PRIVATE profile preference not detected'
+  const nestedArrayNote = 'nested array object must not export'
+  const store = new AuditStore({
+    backend: new MemoryAuditBackend([
+      {
+        id: 'malformed-redaction-summary',
+        category: 'provider',
+        action: 'provider_install',
+        severity: 'info',
+        occurredAt: fixedNow().toISOString(),
+        metadata: {
+          redactionExportSummary: {
+            status: 'passed',
+            blockedTypes: [{ nested: nestedArrayNote }],
+            omittedFieldPaths: [],
+            unknownFieldCount: Number.POSITIVE_INFINITY,
+            checkedAt: fixedNow().toISOString(),
+            extra: {
+              note: privateNote
+            }
+          }
+        }
+      }
+    ]),
+    now: fixedNow
+  })
+
+  const json = store.exportJson()
+  const markdown = store.exportMarkdown()
+  const parsed = JSON.parse(json)
+
+  for (const exported of [json, markdown]) {
+    assert.equal(exported.includes(privateNote), false)
+    assert.equal(exported.includes(nestedArrayNote), false)
+  }
+  assert.equal(parsed.blocked, true)
+  assert.deepEqual(parsed.records, [])
+  assert.equal(parsed.redaction.status, 'blocked')
+  assert.equal(parsed.redaction.unknownFieldCount, 3)
+  assert.ok(parsed.redaction.blockedTypes.includes('unknown_nested_object'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.redactionExportSummary.blockedTypes[0]'
+    )
+  )
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.redactionExportSummary.unknownFieldCount'
+    )
+  )
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.redactionExportSummary.extra'
+    )
+  )
+}
+
 function main(): void {
   testCustomerMemoryExportRedaction()
   testForbiddenContentReturnsExportSummary()
@@ -347,6 +405,7 @@ function main(): void {
   testRawBackendCustomerProfileScalarExportRedaction()
   testCustomerProfileContactKeyHashShapeRedaction()
   testUnknownNestedExportObjectBlocksRecords()
+  testRedactionExportSummaryNestedObjectBlocksRecords()
   console.log('audit export redaction mock tests passed')
 }
 
