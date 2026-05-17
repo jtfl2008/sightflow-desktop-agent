@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 2,
+  "suiteId": "schema-invalid",
+  "title": "Schema Invalid Vision Replay",
+  "samples": "invalid"
+}

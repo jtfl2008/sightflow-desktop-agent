@@ -85,16 +85,18 @@ export async function loadSuiteManifests(suitePath: string): Promise<VisionRepla
   if (stats.isFile()) return [parseManifest(await readFile(suitePath, 'utf8'))]
   const directManifest = path.join(suitePath, 'manifest.json')
   try {
-    return [parseManifest(await readFile(directManifest, 'utf8'))]
-  } catch {
-    const entries = await readdir(suitePath, { withFileTypes: true })
-    const manifests: VisionReplaySuiteManifest[] = []
-    for (const entry of entries.filter((item) => item.isDirectory())) {
-      const file = path.join(suitePath, entry.name, 'manifest.json')
-      manifests.push(parseManifest(await readFile(file, 'utf8')))
-    }
-    return manifests
+    const content = await readFile(directManifest, 'utf8')
+    return [parseManifest(content)]
+  } catch (error) {
+    if (!isNotFoundError(error)) throw error
   }
+  const entries = await readdir(suitePath, { withFileTypes: true })
+  const manifests: VisionReplaySuiteManifest[] = []
+  for (const entry of entries.filter((item) => item.isDirectory())) {
+    const file = path.join(suitePath, entry.name, 'manifest.json')
+    manifests.push(parseManifest(await readFile(file, 'utf8')))
+  }
+  return manifests
 }
 
 export function parseManifest(content: string): VisionReplaySuiteManifest {
@@ -284,4 +286,9 @@ function fail(
   target?: string
 ): VisionEvalFailure {
   return { suiteId, sampleId, taskType, target, category, message }
+}
+
+function isNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  return 'code' in error && (error as { code?: unknown }).code === 'ENOENT'
 }

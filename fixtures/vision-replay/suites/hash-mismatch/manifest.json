@@ -1,0 +1,55 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "hash-mismatch",
+  "title": "Hash Mismatch Vision Replay",
+  "appType": "wechat",
+  "captureStrategy": "rpa_vlm",
+  "source": "synthetic",
+  "privacy": {
+    "storesFullScreenshot": false,
+    "redactionStatus": "synthetic",
+    "containsPersonalData": false,
+    "consentRequired": false,
+    "retentionDays": 7
+  },
+  "samples": [
+    {
+      "id": "hash-mismatch-001",
+      "title": "Synthetic image hash mismatch",
+      "appType": "wechat",
+      "locale": "zh-CN",
+      "platform": "any",
+      "scaleFactor": 1,
+      "windowBounds": { "x": 0, "y": 0, "width": 1000, "height": 800 },
+      "image": {
+        "path": "redacted/hash-mismatch.png",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "width": 1000,
+        "height": 800,
+        "kind": "synthetic"
+      },
+      "tasks": [
+        {
+          "type": "layout_bbox",
+          "target": "chatMainArea",
+          "expectedBbox": [300, 120, 950, 820],
+          "tolerance": { "minIoU": 0.75, "maxCenterDistancePx": 24 },
+          "mockVlmOutput": "[300,120,950,820]"
+        }
+      ],
+      "auditContext": {
+        "auditRecordIds": ["hash-mismatch-1"],
+        "events": [
+          {
+            "category": "layout",
+            "action": "layout.vision_eval_hash_check",
+            "occurredAt": "2026-05-17T08:05:00.000Z",
+            "metadata": { "fixture": "hash-mismatch" }
+          }
+        ]
+      },
+      "tags": ["synthetic", "hash-mismatch"],
+      "createdAt": "2026-05-17T08:05:00.000Z"
+    }
+  ]
+}
