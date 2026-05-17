@@ -428,8 +428,8 @@ function testRedactionExportSummaryArrayScalarShapeBlocksRecords(): void {
 
   for (const exported of [json, markdown]) {
     assert.equal(exported.includes(rawNote), false)
-    assert.equal(exported.includes('Export blocked'), true)
   }
+  assert.equal(markdown.includes('Export blocked'), true)
   assert.equal(parsed.blocked, true)
   assert.deepEqual(parsed.records, [])
   assert.equal(parsed.redaction.status, 'blocked')

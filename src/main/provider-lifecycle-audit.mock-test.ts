@@ -170,9 +170,58 @@ function testProviderLifecycleRedactionSummaryStrictExport(): void {
   )
 }
 
+function testProviderLifecycleRedactionSummaryArrayScalarStrictExport(): void {
+  const rawNote = 'pending original customer note ordinary private text'
+  const store = new AuditStore({
+    backend: new SeededMemoryAuditBackend([
+      {
+        id: 'provider-lifecycle-malformed-summary-scalars',
+        category: 'provider',
+        action: 'provider_install',
+        severity: 'info',
+        occurredAt: fixedNow().toISOString(),
+        metadata: {
+          redactionExportSummary: {
+            status: 'blocked',
+            blockedTypes: [rawNote],
+            omittedFieldPaths: [rawNote],
+            unknownFieldCount: 0,
+            checkedAt: fixedNow().toISOString()
+          }
+        }
+      }
+    ]),
+    now: fixedNow
+  })
+
+  const json = store.exportJson()
+  const markdown = store.exportMarkdown()
+  const parsed = JSON.parse(json)
+
+  assert.equal(json.includes(rawNote), false)
+  assert.equal(markdown.includes(rawNote), false)
+  assert.equal(markdown.includes('Export blocked'), true)
+  assert.equal(parsed.blocked, true)
+  assert.deepEqual(parsed.records, [])
+  assert.equal(parsed.redaction.status, 'blocked')
+  assert.equal(parsed.redaction.unknownFieldCount, 2)
+  assert.ok(parsed.redaction.blockedTypes.includes('unknown_nested_object'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.redactionExportSummary.blockedTypes[0]'
+    )
+  )
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.redactionExportSummary.omittedFieldPaths[0]'
+    )
+  )
+}
+
 function main(): void {
   testProviderLifecycleAuditRedaction()
   testProviderLifecycleRedactionSummaryStrictExport()
+  testProviderLifecycleRedactionSummaryArrayScalarStrictExport()
   console.log('provider lifecycle audit mock tests passed')
 }
 
