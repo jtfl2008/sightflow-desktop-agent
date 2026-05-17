@@ -104,5 +104,5 @@ function blockedTypeForKey(key: string): DiagnosticsBlockedType | null {
 }
 
 function isNonEmptyRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Object.keys(value as object).length > 0
 }

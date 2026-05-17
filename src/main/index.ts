@@ -41,6 +41,13 @@ import { ChannelAdapterStore } from './channel-adapter-store'
 import { CustomerMemoryStore } from './customer-memory-store'
 import { VisionReplayStore } from './vision-replay-store'
 import { registerVisionReplayIpc } from './vision-replay-ipc'
+import { registerDiagnosticsIpc } from './diagnostics-ipc'
+import { DiagnosticsStore } from './diagnostics-store'
+import {
+  createEmptyDiagnosticsAdapter,
+  createRuntimeDiagnosticsAdapter,
+  createVisionEvalDiagnosticsAdapter
+} from './diagnostics-source-adapters'
 import { manifestFromPreset, validateChannelAdapterManifest } from '../core/channel-adapter/manifest-validator'
 import { createChannelAdapterRuntimeState } from '../core/channel-adapter/runtime-state'
 import { buildProviderChannelContextFromAdapter } from '../core/channel-adapter/provider-channel-context'
@@ -393,12 +400,19 @@ app.whenReady().then(async () => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
-  registerVisionReplayIpc(
+  const visionReplayStore = new VisionReplayStore({
+    projectRoot: process.cwd(),
+    userDataRoot: app.getPath('userData')
+  })
+  registerVisionReplayIpc(ipcMain, visionReplayStore)
+  registerDiagnosticsIpc(
     ipcMain,
-    new VisionReplayStore({
-      projectRoot: process.cwd(),
-      userDataRoot: app.getPath('userData')
-    })
+    new DiagnosticsStore([
+      createRuntimeDiagnosticsAdapter(auditStore),
+      createEmptyDiagnosticsAdapter('debug_console'),
+      createVisionEvalDiagnosticsAdapter(visionReplayStore),
+      createEmptyDiagnosticsAdapter('workflow_preview')
+    ])
   )
 
   // ── Settings 持久化 ──

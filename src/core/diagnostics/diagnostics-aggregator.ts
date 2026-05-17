@@ -10,7 +10,6 @@ import {
   DiagnosticsQueryResponse,
   DiagnosticsRecordView,
   DiagnosticsRelatedSourceSummary,
-  DiagnosticsSource,
   DiagnosticsSourceAdapter,
   DiagnosticsSourceRecord,
   DiagnosticsTimelineNode

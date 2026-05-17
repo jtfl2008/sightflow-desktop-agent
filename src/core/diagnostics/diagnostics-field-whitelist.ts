@@ -29,18 +29,18 @@ export function whitelistDiagnosticsNodeDetail(
     case 'knowledge':
       return {
         type: 'knowledge',
-        matched: arrayValue(input.matched)
-          .map((item) => {
+        matched: arrayValue(input.matched).reduce<
+          Array<{ id: string; title: string; sourceType: string; score?: number }>
+        >((acc, item) => {
             const record = isRecord(item) ? item : {}
             const id = stringValue(record.id)
             const title = stringValue(record.title)
             const sourceType = stringValue(record.sourceType)
-            if (!id || !title || !sourceType) return null
-            return { id, title, sourceType, score: numberValue(record.score) }
-          })
-          .filter((item): item is { id: string; title: string; sourceType: string; score?: number } =>
-            Boolean(item)
-          ),
+            if (!id || !title || !sourceType) return acc
+            const score = numberValue(record.score)
+            acc.push(score === undefined ? { id, title, sourceType } : { id, title, sourceType, score })
+            return acc
+          }, []),
         budgetApplied: booleanValue(input.budgetApplied),
         omittedCount: numberValue(input.omittedCount)
       }

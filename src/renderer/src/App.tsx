@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import { t } from './i18n'
 import logoUrl from './assets/logo.png'
+import { DiagnosticsCenterPage } from './diagnostics/DiagnosticsCenterPage'
 import './index.css'
 
 interface LogEntry {
@@ -18,6 +19,7 @@ type SettingsSection =
   | 'intent'
   | 'channel'
   | 'visionReplay'
+  | 'diagnostics'
   | 'memory'
   | 'debug'
   | 'providerSecurity'
@@ -841,6 +843,12 @@ function SettingsWindow(): React.JSX.Element {
           视觉回放
         </button>
         <button
+          className={`settings-nav-item ${section === 'diagnostics' ? 'active' : ''}`}
+          onClick={() => setSection('diagnostics')}
+        >
+          诊断中心
+        </button>
+        <button
           className={`settings-nav-item ${section === 'memory' ? 'active' : ''}`}
           onClick={() => setSection('memory')}
         >
@@ -875,6 +883,8 @@ function SettingsWindow(): React.JSX.Element {
           <ChannelAdapterSettingsPage />
         ) : section === 'visionReplay' ? (
           <VisionReplayPage />
+        ) : section === 'diagnostics' ? (
+          <DiagnosticsCenterPage />
         ) : section === 'memory' ? (
           <CustomerMemoryPage />
         ) : section === 'debug' ? (
