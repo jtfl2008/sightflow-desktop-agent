@@ -12,7 +12,7 @@
 // 坐标系统一约定：BoxRegions 里的矩形都是逻辑像素的绝对屏幕坐标，与 captureScreenRegion、
 // humanLikeMove、screen.getDisplayMatching 一致；裁剪到物理像素的换算由 captureScreenRegion 内部处理。
 
-import { DesktopDevice } from './device'
+import { DesktopDevice, DeviceDeliveryResult } from './device'
 import { AppType, BoxRegions, ScreenRect } from './rpa/types'
 import {
   BBox,
@@ -26,6 +26,7 @@ import {
   activeUnreadByClickAction,
   clickUnreadContactAction,
   defaultClickPolicy,
+  fillMessageByCoordsAction,
   sendReplyByCoordsAction
 } from './rpa/input-utils'
 import { comparePngBuffers } from './rpa/image-compare'
@@ -186,6 +187,47 @@ export class BoxSelectDevice implements DesktopDevice {
     const [x, y] = inputArea.coordinates
     const ok = await sendReplyByCoordsAction(x, y, text)
     if (!ok) throw new Error('发送消息失败')
+  }
+
+  async draftMessage(text: string): Promise<DeviceDeliveryResult> {
+    const inputArea = getInputAreaFromCache(this.appType)
+    if (!inputArea) {
+      return {
+        success: false,
+        mode: 'draft',
+        error: '尚未测量输入框区域',
+        audit: {
+          category: 'error',
+          action: 'draft_fill_failed',
+          message: '尚未测量输入框区域',
+          metadata: { appType: this.appType, device: 'box-select' }
+        }
+      }
+    }
+    const [x, y] = inputArea.coordinates
+    const ok = await fillMessageByCoordsAction(x, y, text)
+    if (!ok) {
+      return {
+        success: false,
+        mode: 'draft',
+        error: '填入草稿失败',
+        audit: {
+          category: 'error',
+          action: 'draft_fill_failed',
+          message: '填入草稿失败',
+          metadata: { appType: this.appType, device: 'box-select' }
+        }
+      }
+    }
+    return {
+      success: true,
+      mode: 'draft',
+      audit: {
+        category: 'message',
+        action: 'draft_filled',
+        metadata: { appType: this.appType, device: 'box-select' }
+      }
+    }
   }
 
   // 通用 IM 一般单击就能切换会话，统一走 defaultClickPolicy(appType)，

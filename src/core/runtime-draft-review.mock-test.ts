@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict'
-import { DesktopDevice } from './device'
+import { DesktopDevice, DeviceDeliveryResult } from './device'
 import { GenericChannelSession, createInitialGenericChannelState } from './generic-channel-session'
 import { RuntimeHost } from './runtime-host'
 import { ProviderAdapter, ProviderEvent, ProviderInput } from './session-types'
@@ -8,6 +8,7 @@ import { BBox } from './rpa/vision-utils'
 
 class DraftReviewMockDevice implements DesktopDevice {
   sentMessages: string[] = []
+  draftMessages: string[] = []
   baselineWrites = 0
   appType: AppType = 'wechat'
   apiKey = ''
@@ -61,6 +62,11 @@ class DraftReviewMockDevice implements DesktopDevice {
 
   async sendMessage(text: string): Promise<void> {
     this.sentMessages.push(text)
+  }
+
+  async draftMessage(text: string): Promise<DeviceDeliveryResult> {
+    this.draftMessages.push(text)
+    return { success: true, mode: 'draft' }
   }
 
   async activeUnreadByClick(coordinates: [number, number]): Promise<void> {
@@ -135,6 +141,7 @@ async function testDraftDoesNotAutoSend(): Promise<void> {
   await waitFor(() => state.replyDrafts.length === 1, 'draft creation')
 
   assert.equal(device.sentMessages.length, 0)
+  assert.deepEqual(device.draftMessages, ['hello'])
   assert.equal(state.replyDrafts[0].content, 'hello')
   assert.equal(state.replyDrafts[0].status, 'pending')
   await runtime.stopSession('test_done')

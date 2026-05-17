@@ -4,12 +4,17 @@
 // 串联 screenshot-utils、input-utils、has-unread、vision-utils
 // 所有感知和动作能力在这里汇聚
 
-import { DesktopDevice } from './device'
+import { DesktopDevice, DeviceDeliveryResult } from './device'
 import { AIClient } from './ai-client'
 import { AppType } from './rpa/types'
 import { BBox } from './rpa/vision-utils'
 import { captureChatMainArea } from './rpa/screenshot-utils'
-import { sendReplyAction, activeUnreadByClickAction, clickUnreadContactAction } from './rpa/input-utils'
+import {
+  sendReplyAction,
+  draftReplyAction,
+  activeUnreadByClickAction,
+  clickUnreadContactAction
+} from './rpa/input-utils'
 import {
   hasUnreadMessage as hasUnreadMessageDetect,
   isChatContactUnread as isChatContactUnreadDetect
@@ -232,6 +237,32 @@ export class RPADevice implements DesktopDevice {
     const success = await sendReplyAction(this.appType, text)
     if (!success) {
       throw new Error('发送消息失败')
+    }
+  }
+
+  async draftMessage(text: string): Promise<DeviceDeliveryResult> {
+    const success = await draftReplyAction(this.appType, text)
+    if (!success) {
+      return {
+        success: false,
+        mode: 'draft',
+        error: '填入草稿失败',
+        audit: {
+          category: 'error',
+          action: 'draft_fill_failed',
+          message: '填入草稿失败',
+          metadata: { appType: this.appType, device: 'rpa' }
+        }
+      }
+    }
+    return {
+      success: true,
+      mode: 'draft',
+      audit: {
+        category: 'message',
+        action: 'draft_filled',
+        metadata: { appType: this.appType, device: 'rpa' }
+      }
     }
   }
 

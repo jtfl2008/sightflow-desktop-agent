@@ -229,6 +229,17 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
       return
     }
 
+    const delivery = await this.device.draftMessage(content)
+    if (!delivery.success) {
+      ctx.host.log('error', delivery.error || '填入回复草稿失败')
+      ctx.host.enqueue({
+        type: 'wait_retry',
+        reason: delivery.audit?.action || 'draft_fill_failed',
+        delayMs: this.retryDelayMs
+      })
+      return
+    }
+
     const draft = this.createReplyDraft(content, ctx)
     ctx.state.replyDrafts.push(draft)
     ctx.state.activeDraftId = draft.id

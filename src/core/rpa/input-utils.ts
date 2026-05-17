@@ -116,15 +116,14 @@ const getWeChatInputPosition = (bounds: any, scaleFactor: number) => {
 }
 
 /**
- * 业务原子 2 — 核心实现：按给定坐标发送消息（不依赖 VLM 缓存）。
- * `sendReplyAction`（VLM 路线）与 `BoxSelectDevice.sendMessage`（框选路线）共用此函数。
+ * 业务原子 2 — 核心实现：按给定坐标填入消息（不依赖 VLM 缓存）。
+ * `draftMessage` 路线只执行到粘贴，不按 Enter。
  *
  * 1. humanLikeMove → 输入框焦点坐标 (x, y)
  * 2. 隐式鼠标左键点击聚焦
  * 3. 剪贴板 + Cmd/Ctrl+V 粘贴
- * 4. Enter 发送
  */
-export async function sendReplyByCoordsAction(
+export async function fillMessageByCoordsAction(
   x: number,
   y: number,
   text: string
@@ -153,6 +152,31 @@ export async function sendReplyByCoordsAction(
 
     await randomDelayIn(300, 500)
 
+    return true
+  } catch (err: any) {
+    console.error('[fillMessageByCoordsAction] Failed:', err)
+    return false
+  }
+}
+
+/**
+ * 按给定坐标发送消息：先填入草稿，再按 Enter 发送。
+ */
+export async function sendReplyByCoordsAction(
+  x: number,
+  y: number,
+  text: string
+): Promise<boolean> {
+  const robot = getRobot()
+  if (!robot) {
+    console.error('[sendReplyByCoordsAction] RobotJS 缺失')
+    return false
+  }
+
+  try {
+    const filled = await fillMessageByCoordsAction(x, y, text)
+    if (!filled) return false
+
     robot.keyTap('enter')
 
     if (IS_WINDOWS) {
@@ -179,10 +203,29 @@ export async function sendReplyByCoordsAction(
  * 从 layout cache 中找输入框坐标，缺失时回退到经验公式，最终调用 `sendReplyByCoordsAction`。
  */
 export async function sendReplyAction(appType: AppType, text: string): Promise<boolean> {
+  const coords = await resolveReplyInputCoordinates(appType)
+  if (!coords.success) {
+    console.error(`[sendReplyAction] ${coords.error}`)
+    return false
+  }
+  return sendReplyByCoordsAction(coords.x, coords.y, text)
+}
+
+export async function draftReplyAction(appType: AppType, text: string): Promise<boolean> {
+  const coords = await resolveReplyInputCoordinates(appType)
+  if (!coords.success) {
+    console.error(`[draftReplyAction] ${coords.error}`)
+    return false
+  }
+  return fillMessageByCoordsAction(coords.x, coords.y, text)
+}
+
+async function resolveReplyInputCoordinates(
+  appType: AppType
+): Promise<{ success: true; x: number; y: number } | { success: false; error: string }> {
   const windowInfo = await getWindowInfo(appType, false)
   if (!windowInfo || !windowInfo.bounds) {
-    console.error('[sendReplyAction] 无法获取窗口信息')
-    return false
+    return { success: false, error: '无法获取窗口信息' }
   }
 
   let inputX: number | undefined
@@ -204,7 +247,7 @@ export async function sendReplyAction(appType: AppType, text: string): Promise<b
     inputY = pos.inputY
   }
 
-  return sendReplyByCoordsAction(inputX, inputY, text)
+  return { success: true, x: inputX, y: inputY }
 }
 
 export type ClickPolicy = 'single' | 'double'
