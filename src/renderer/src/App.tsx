@@ -10,7 +10,7 @@ interface LogEntry {
 }
 
 type EngineStatus = 'idle' | 'running' | 'error'
-type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge' | 'intent' | 'channel' | 'memory'
+type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge' | 'intent' | 'channel' | 'memory' | 'debug'
 type AppType = 'wechat' | 'wework' | 'dingtalk' | 'lark' | 'slack' | 'telegram' | 'generic'
 
 type CaptureStrategy = 'auto' | 'vlm' | 'box-select'
@@ -711,6 +711,12 @@ function SettingsWindow(): React.JSX.Element {
         >
           客户记忆
         </button>
+        <button
+          className={`settings-nav-item ${section === 'debug' ? 'active' : ''}`}
+          onClick={() => setSection('debug')}
+        >
+          调试台
+        </button>
       </aside>
 
       <main className="settings-main">
@@ -726,8 +732,10 @@ function SettingsWindow(): React.JSX.Element {
           <IntentRoutingSettingsPage />
         ) : section === 'channel' ? (
           <ChannelAdapterSettingsPage />
-        ) : (
+        ) : section === 'memory' ? (
           <CustomerMemoryPage />
+        ) : (
+          <ProviderDebugConsolePage />
         )}
       </main>
     </div>
@@ -1944,6 +1952,211 @@ function SaveMemorySuggestionDialog({
           <button className="review-btn primary" onClick={onSave}>确认保存</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+type DebugRunState = 'idle' | 'validating' | 'running' | 'cancelled' | 'timeout' | 'success' | 'error'
+type DebugEvent = { id: string; type: 'thinking' | 'reply_text' | 'skip' | 'error'; content: string; at: string }
+
+function ProviderDebugConsolePage(): React.JSX.Element {
+  const [manifestUrl, setManifestUrl] = useState('file://manifest.json')
+  const [providerSource, setProviderSource] = useState('builtin_doubao')
+  const [appType, setAppType] = useState<AppType>('wechat')
+  const [currentContact, setCurrentContact] = useState('张三 <zhangsan@example.com>')
+  const [ocrText, setOcrText] = useState('客户：请帮我查一下企业版价格。')
+  const [screenshot, setScreenshot] = useState('data:image/png;base64,debug-sample')
+  const [knowledgeCount, setKnowledgeCount] = useState(7)
+  const [policyCount, setPolicyCount] = useState(3)
+  const [runState, setRunState] = useState<DebugRunState>('idle')
+  const [events, setEvents] = useState<DebugEvent[]>([])
+  const [history, setHistory] = useState<Array<{ id: string; status: DebugRunState; events: number; source: string }>>([])
+  const [manifestStatus, setManifestStatus] = useState<'idle' | 'passed' | 'warning' | 'blocked'>('idle')
+  const sessionId = useMemo(() => `dbg_${new Date('2026-05-17T08:00:00.000Z').getTime().toString(36)}`, [])
+  const budgetBlocked = !screenshot.startsWith('data:image/') || knowledgeCount > 10 || policyCount > 20
+  const finalReply = [...events].reverse().find((event) => event.type === 'reply_text')?.content || ''
+  const providerInputPreview = {
+    screenshot: screenshot ? '[data-url redacted]' : '',
+    appType,
+    currentContact,
+    ocrText,
+    knowledgeSnippets: Array.from({ length: knowledgeCount }, (_, index) => ({
+      id: `ks-${index + 1}`,
+      title: `知识片段 ${index + 1}`,
+      sourceType: index % 2 ? 'faq' : 'doc',
+      content: '[redacted preview]',
+      score: Number((0.92 - index * 0.02).toFixed(2))
+    })),
+    policyHints: Array.from({ length: policyCount }, (_, index) => ({
+      id: `ph-${index + 1}`,
+      label: index === 0 ? '安全策略' : '提示',
+      severity: index === 0 ? 'requires_review' : 'info',
+      reason: 'debug console simulation'
+    })),
+    debug: { sessionId, source: 'debug_console', createdAt: '2026-05-17T08:00:00.000Z' }
+  }
+  const validationItems = [
+    { label: 'schema 版本', passed: true, severity: 'success' as const },
+    { label: 'apiVersion = 1', passed: true, severity: 'success' as const },
+    { label: 'entry 相对路径', passed: !manifestUrl.includes('data:'), severity: manifestUrl.startsWith('http://') ? 'warning' as const : 'success' as const },
+    { label: '签名状态', passed: false, severity: 'warning' as const, message: '未签名，仅允许本地调试' },
+    { label: '安全隔离', passed: true, severity: 'success' as const }
+  ]
+
+  const validateManifest = useCallback(() => {
+    setRunState('validating')
+    window.setTimeout(() => {
+      if (!manifestUrl.trim() || manifestUrl.startsWith('javascript:') || manifestUrl.startsWith('data:')) {
+        setManifestStatus('blocked')
+        setRunState('error')
+      } else {
+        setManifestStatus(manifestUrl.startsWith('http://') ? 'warning' : 'passed')
+        setRunState('idle')
+      }
+    }, 120)
+  }, [manifestUrl])
+
+  const runDebug = useCallback(() => {
+    if (budgetBlocked || manifestStatus === 'blocked') return
+    const startedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    const nextEvents: DebugEvent[] = [
+      { id: 'e1', type: 'thinking', content: '开始解析 ProviderInput 上下文', at: startedAt },
+      { id: 'e2', type: 'thinking', content: `knowledgeSnippets ${knowledgeCount}/10, policyHints ${policyCount}/20`, at: startedAt },
+      { id: 'e3', type: 'reply_text', content: '已生成调试回复：企业版价格可结合席位数与 API 集成范围评估。', at: startedAt }
+    ]
+    setRunState('running')
+    setEvents([])
+    window.setTimeout(() => {
+      setEvents(nextEvents)
+      setRunState('success')
+      setHistory((items) => [{ id: sessionId, status: 'success' as DebugRunState, events: nextEvents.length, source: 'debug_console' }, ...items].slice(0, 20))
+    }, 220)
+  }, [budgetBlocked, knowledgeCount, manifestStatus, policyCount, sessionId])
+
+  const cancelDebug = useCallback(() => {
+    setRunState('cancelled')
+    setHistory((items) => [{ id: sessionId, status: 'cancelled' as DebugRunState, events: events.length, source: 'debug_console' }, ...items].slice(0, 20))
+  }, [events.length, sessionId])
+
+  return (
+    <div className="draft-dashboard provider-debug-page">
+      <header className="draft-header">
+        <div>
+          <h1>Provider 调试台</h1>
+          <p>本地诊断 Provider manifest、ProviderInput 与事件流；不触发真实发送、草稿或正式审计。</p>
+        </div>
+        <div className="draft-header-actions">
+          <StatusChip label={`状态：${runState}`} tone={runState === 'success' ? 'success' : runState === 'error' ? 'danger' : runState === 'running' ? 'info' : 'warning'} />
+          <StatusChip label="source=debug_console" tone="info" />
+        </div>
+      </header>
+
+      <div className="debug-grid">
+        <section className="draft-panel debug-source-panel">
+          <h2>Manifest 校验</h2>
+          <select className="audit-search" value={providerSource} onChange={(event) => setProviderSource(event.target.value)}>
+            <option value="builtin_doubao">内置 Doubao</option>
+            <option value="installed">已安装 Provider</option>
+            <option value="local_manifest">本地 manifest</option>
+            <option value="remote_manifest">远程 manifest</option>
+          </select>
+          <input className="audit-search" value={manifestUrl} onChange={(event) => setManifestUrl(event.target.value)} placeholder="file://manifest.json" />
+          <button className="review-btn secondary" onClick={validateManifest}>校验</button>
+          <div className="debug-checklist">
+            {validationItems.map((item) => (
+              <div key={item.label} className={`debug-check ${item.severity}`}>
+                <StatusChip label={item.passed ? '通过' : item.severity === 'warning' ? '警告' : '阻断'} tone={item.severity} />
+                <span>{item.label}</span>
+                {item.message ? <small>{item.message}</small> : null}
+              </div>
+            ))}
+          </div>
+          <div className="memory-banner warning">密钥已脱敏；未签名/未知来源 Provider 仅允许调试，不能生产安装。</div>
+          <div className="knowledge-editor">
+            <label>api.baseUrl</label>
+            <input value="http://127.0.0.1:8787" readOnly />
+            <label>auth.password</label>
+            <input value="••••••••••••" readOnly />
+          </div>
+        </section>
+
+        <section className="draft-panel debug-input-panel">
+          <h2>ProviderInput 构造器</h2>
+          <div className="debug-input-row">
+            <label>appType</label>
+            <select value={appType} onChange={(event) => setAppType(event.target.value as AppType)}>
+              {(Object.keys(APP_TYPE_LABELS) as AppType[]).map((type) => <option key={type} value={type}>{APP_TYPE_LABELS[type]}</option>)}
+            </select>
+          </div>
+          <div className="debug-screenshot-slot">
+            <strong>截图样例</strong>
+            <button className="review-btn secondary" onClick={() => setScreenshot('data:image/png;base64,debug-sample')}>选择样例</button>
+          </div>
+          <label>currentContact</label>
+          <input className="audit-search" value={currentContact} onChange={(event) => setCurrentContact(event.target.value)} />
+          <label>ocrText</label>
+          <textarea className="draft-editor" value={ocrText} onChange={(event) => setOcrText(event.target.value)} />
+          <div className="debug-budget">
+            <span>knowledgeSnippets {knowledgeCount}/10</span>
+            <input type="range" min="0" max="12" value={knowledgeCount} onChange={(event) => setKnowledgeCount(Number(event.target.value))} />
+          </div>
+          <div className="debug-budget">
+            <span>policyHints {policyCount}/20</span>
+            <input type="range" min="0" max="24" value={policyCount} onChange={(event) => setPolicyCount(Number(event.target.value))} />
+          </div>
+          {budgetBlocked ? <ErrorBanner message="输入预算超限或截图缺失，已阻断运行" /> : null}
+          <h3>JSON Preview</h3>
+          <pre className="debug-json">{JSON.stringify(providerInputPreview, null, 2)}</pre>
+        </section>
+
+        <section className="draft-panel debug-run-panel">
+          <h2>运行控制</h2>
+          <div className="review-actions">
+            {runState === 'running' ? (
+              <button className="review-btn danger" onClick={cancelDebug}>取消</button>
+            ) : (
+              <button className="review-btn primary" disabled={budgetBlocked || manifestStatus === 'blocked'} onClick={runDebug}>运行</button>
+            )}
+            <button className="review-btn secondary" onClick={() => setRunState('timeout')}>模拟超时</button>
+          </div>
+          <div className="debug-timeline">
+            <h3>事件流</h3>
+            {events.length ? events.map((event) => (
+              <div key={event.id} className={`debug-event ${event.type}`}>
+                <StatusChip label={event.type} tone={event.type === 'error' ? 'danger' : event.type === 'reply_text' ? 'success' : 'info'} />
+                <span>{event.at}</span>
+                <p>{event.content}</p>
+              </div>
+            )) : <EmptyState label="暂无事件" />}
+          </div>
+          <div className="preview-result">
+            <h3>最终回复预览</h3>
+            <p>{finalReply || '不会发送消息，也不会创建草稿。'}</p>
+          </div>
+          <div className="redacted-audit-card">
+            <h3>错误详情</h3>
+            <p>{manifestStatus === 'blocked' ? 'manifest.schema_invalid / 阻断错误' : runState === 'timeout' ? 'runtime.timeout / 60s' : '无'}</p>
+          </div>
+          <button className="review-btn secondary" onClick={() => window.alert('debug report 已脱敏：不含 apiKey/token/secret/password/screenshot base64/完整聊天记录')}>导出 debug report</button>
+        </section>
+      </div>
+
+      <section className="draft-panel debug-history-panel">
+        <h2>调试运行历史</h2>
+        <table className="audit-table">
+          <tbody>
+            {(history.length ? history : [{ id: sessionId, status: 'idle' as DebugRunState, events: 0, source: 'debug_console' }]).map((item) => (
+              <tr key={`${item.id}-${item.status}`}>
+                <td>{item.id}</td>
+                <td><StatusChip label={item.status} tone={item.status === 'success' ? 'success' : item.status === 'idle' ? 'info' : 'warning'} /></td>
+                <td>事件 {item.events}</td>
+                <td>{item.source}</td>
+                <td>不进入正式 audit</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
     </div>
   )
 }
