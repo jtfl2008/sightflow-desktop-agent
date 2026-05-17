@@ -3,6 +3,7 @@ import {
   DiagnosticsNodeDetail,
   DiagnosticsOmittedReason
 } from './diagnostics-types'
+import { isDiagnosticsContactHash } from './diagnostics-contact-hash'
 
 export function whitelistDiagnosticsNodeDetail(
   capability: DiagnosticsCapability,
@@ -49,7 +50,7 @@ export function whitelistDiagnosticsNodeDetail(
         type: 'customer_memory',
         profileId: stringValue(input.profileId),
         version: stringValue(input.version),
-        contactKeyHash: stringValue(input.contactKeyHash),
+        contactKeyHash: hashValue(input.contactKeyHash),
         injectedFieldPaths: stringArray(input.injectedFieldPaths),
         omittedReason: omittedReasonValue(input.omittedReason)
       }
@@ -87,7 +88,7 @@ export function whitelistDiagnosticsNodeDetail(
       return {
         type: 'vision',
         reportId: stringValue(input.reportId),
-        sampleIdHash: stringValue(input.sampleIdHash),
+        sampleIdHash: hashValue(input.sampleIdHash),
         failureClass: stringValue(input.failureClass),
         privacyGateStatus: stringValue(input.privacyGateStatus),
         redactionStatus: stringValue(input.redactionStatus),
@@ -111,6 +112,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+function hashValue(value: unknown): string | undefined {
+  const text = stringValue(value)
+  return text && isDiagnosticsContactHash(text) ? text : undefined
 }
 
 function numberValue(value: unknown): number | undefined {

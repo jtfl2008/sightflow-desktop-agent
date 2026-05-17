@@ -1,5 +1,6 @@
 import type { ScreenRect } from './types'
 import type { VisionFailureCategory } from './vision-eval-types'
+import type { RedactionExportSummary } from '../redaction-export-summary'
 
 export type VisionPrivacyGateStatus = 'passed' | 'warning' | 'blocked'
 export type VisionPrivacyGateCheckStatus = VisionPrivacyGateStatus
@@ -230,4 +231,5 @@ export interface VisionReplayExportResult {
   fileName: string
   content: string
   redactionSummary: VisionRedactionSummary
+  redactionExportSummary: RedactionExportSummary
 }

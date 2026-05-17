@@ -149,24 +149,8 @@ export interface DiagnosticsTimelineNode {
   occurredAt?: string
 }
 
-export type DiagnosticsBlockedType =
-  | 'raw_screenshot'
-  | 'base64'
-  | 'full_chat'
-  | 'plaintext_contact'
-  | 'full_profile'
-  | 'provider_config_values'
-  | 'webhook_body'
-  | 'secrets'
-  | 'unknown_nested_object'
-
-export interface DiagnosticsRedactionSummary {
-  status: 'passed' | 'blocked'
-  blockedTypes: DiagnosticsBlockedType[]
-  omittedFieldPaths: string[]
-  unknownFieldCount: number
-  checkedAt: string
-}
+export type DiagnosticsBlockedType = RedactionExportBlockedType
+export type DiagnosticsRedactionSummary = RedactionExportSummary
 
 export interface DiagnosticsRelatedSourceSummary {
   source: DiagnosticsSource
@@ -251,3 +235,4 @@ export const DIAGNOSTICS_CAPABILITY_ORDER: DiagnosticsCapability[] = [
   'vision',
   'final_action'
 ]
+import type { RedactionExportBlockedType, RedactionExportSummary } from '../redaction-export-summary'

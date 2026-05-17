@@ -1,23 +1,8 @@
 import { AuditExport, AuditRecord } from './audit-types'
+import type { RedactionExportBlockedType, RedactionExportSummary } from '../core/redaction-export-summary'
 
-export type AuditExportBlockedType =
-  | 'raw_screenshot'
-  | 'base64'
-  | 'full_chat'
-  | 'plaintext_contact'
-  | 'full_profile'
-  | 'provider_config_values'
-  | 'webhook_body'
-  | 'secrets'
-  | 'unknown_nested_object'
-
-export interface AuditExportRedactionSummary {
-  status: 'passed' | 'blocked'
-  blockedTypes: AuditExportBlockedType[]
-  omittedFieldPaths: string[]
-  unknownFieldCount: number
-  checkedAt: string
-}
+export type AuditExportBlockedType = RedactionExportBlockedType
+export type AuditExportRedactionSummary = RedactionExportSummary
 
 export interface RedactedAuditExport extends AuditExport {
   redaction: AuditExportRedactionSummary
