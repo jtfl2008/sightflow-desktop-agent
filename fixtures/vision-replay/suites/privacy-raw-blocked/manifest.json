@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "privacy-raw-blocked",
+  "title": "Privacy Raw Blocked",
+  "appType": "wechat",
+  "captureStrategy": "rpa_vlm",
+  "source": "manual_redacted",
+  "privacy": {
+    "storesFullScreenshot": true,
+    "redactionStatus": "redacted",
+    "containsPersonalData": true,
+    "consentRequired": false,
+    "retentionDays": 7
+  },
+  "samples": [
+    {
+      "id": "raw-no-consent",
+      "title": "Raw screenshot without consent should fail privacy gate",
+      "appType": "wechat",
+      "locale": "zh-CN",
+      "platform": "any",
+      "scaleFactor": 1,
+      "windowBounds": { "x": 0, "y": 0, "width": 1000, "height": 800 },
+      "image": {
+        "sha256": "hash-only",
+        "width": 1000,
+        "height": 800,
+        "kind": "synthetic"
+      },
+      "tasks": [],
+      "tags": ["privacy"],
+      "createdAt": "2026-05-17T08:00:00.000Z"
+    }
+  ]
+}
