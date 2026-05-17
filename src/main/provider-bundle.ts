@@ -4,6 +4,11 @@ import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { ProviderAdapter, ProviderEvent, ProviderInput } from '../core/session-types'
+import type {
+  ProviderArtifactDeclaration,
+  ProviderManifestSecurityExtension,
+  ProviderPermissionDeclaration
+} from './provider-security/provider-security-types'
 
 export const BUILTIN_DOUBAO_PROVIDER_ID = 'volcengine-ark'
 
@@ -51,6 +56,9 @@ export interface ProviderBundleManifest {
   moduleType?: 'module' | 'commonjs'
   capabilities: ['chat']
   configSchema: ProviderConfigSchema
+  security?: ProviderManifestSecurityExtension
+  artifacts?: ProviderArtifactDeclaration[]
+  permissions?: ProviderPermissionDeclaration[]
 }
 
 export interface InstalledProviderInfo {
@@ -428,7 +436,10 @@ function validateManifest(input: any): ProviderBundleManifest {
       type: 'object',
       properties: configSchema.properties as Record<string, ProviderSchemaField>,
       required
-    }
+    },
+    security: input.security,
+    artifacts: input.artifacts,
+    permissions: input.permissions
   }
 }
 
