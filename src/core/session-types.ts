@@ -1,5 +1,6 @@
 import { AppType } from './rpa/types'
 import type { IntentContext, RouteDecision } from './intent-types'
+import type { ProviderInputCustomerProfile } from './customer-memory-types'
 
 export interface ProviderInput {
   screenshot: string
@@ -23,6 +24,7 @@ export interface ProviderInput {
   }>
   intent?: IntentContext
   route?: RouteDecision
+  customerProfile?: ProviderInputCustomerProfile
 }
 
 export type ProviderEvent =
