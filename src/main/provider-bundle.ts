@@ -7,8 +7,11 @@ import { ProviderAdapter, ProviderEvent, ProviderInput } from '../core/session-t
 import type {
   ProviderArtifactDeclaration,
   ProviderManifestSecurityExtension,
-  ProviderPermissionDeclaration
+  ProviderPermissionDeclaration,
+  TrustedPublisherRecord
 } from './provider-security/provider-security-types'
+import { evaluateProviderProductionGate, ProviderProductionTrustDecision } from './provider-security/provider-production-gate'
+import { validateProviderEntryPath } from './provider-security/provider-manifest-security'
 
 export const BUILTIN_DOUBAO_PROVIDER_ID = 'volcengine-ark'
 
@@ -72,6 +75,11 @@ export interface InstalledProviderInfo {
 export interface ProviderInstallResult {
   installed: InstalledProviderInfo
   manifest: ProviderBundleManifest
+  productionGate: ProviderProductionTrustDecision
+}
+
+export interface ProviderInstallOptions {
+  trustedPublishers?: TrustedPublisherRecord[]
 }
 
 interface ProviderBundleModule {
@@ -134,7 +142,10 @@ export class BundleProviderAdapter implements ProviderAdapter {
   }
 }
 
-export async function installProviderFromUrl(manifestUrl: string): Promise<ProviderInstallResult> {
+export async function installProviderFromUrl(
+  manifestUrl: string,
+  options: ProviderInstallOptions = {}
+): Promise<ProviderInstallResult> {
   const normalizedUrl = manifestUrl.trim()
   if (!normalizedUrl) {
     throw new Error('配置清单地址不能为空')
@@ -142,15 +153,38 @@ export async function installProviderFromUrl(manifestUrl: string): Promise<Provi
 
   const manifestContent = await readUrlText(normalizedUrl)
   const manifest = validateManifest(JSON.parse(manifestContent))
-  const entryUrl = new URL(manifest.entry, normalizedUrl).toString()
-  const entryContent = await readUrlText(entryUrl)
+  const artifacts = await readProviderArtifacts(normalizedUrl, manifest)
+  const productionGate = evaluateProviderProductionGate({
+    manifest,
+    sourceUrl: normalizedUrl,
+    trustedPublishers: options.trustedPublishers ?? getTrustedPublishersFromEnv(),
+    artifactContentByPath: artifacts.contentByPath
+  })
+  if (!productionGate.productionInstallAllowed) {
+    throw new Error(
+      `Provider production gate denied: ${productionGate.reasonCodes.join(', ') || 'not trusted for production'}`
+    )
+  }
+
   const installDir = getProviderInstallDir(manifest.id, manifest.version)
   const manifestFile = path.join(installDir, 'manifest.json')
-  const entryFile = path.join(installDir, path.basename(manifest.entry))
+  const entryPath = validateProviderEntryPath(manifest.entry)
+  if (!entryPath.valid || !entryPath.normalizedPath) {
+    throw new Error(entryPath.message || 'Provider entry path invalid')
+  }
+  const entryFile = path.join(installDir, entryPath.normalizedPath)
 
   await mkdir(installDir, { recursive: true })
   await writeFile(manifestFile, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8')
-  await writeFile(entryFile, entryContent, 'utf8')
+  for (const [artifactPath, content] of Object.entries(artifacts.contentByPath)) {
+    const pathCheck = validateProviderEntryPath(artifactPath)
+    if (!pathCheck.valid || !pathCheck.normalizedPath) {
+      throw new Error(pathCheck.message || 'Provider artifact path invalid')
+    }
+    const artifactFile = path.join(installDir, pathCheck.normalizedPath)
+    await mkdir(path.dirname(artifactFile), { recursive: true })
+    await writeFile(artifactFile, content, 'utf8')
+  }
 
   return {
     installed: {
@@ -160,7 +194,8 @@ export async function installProviderFromUrl(manifestUrl: string): Promise<Provi
       entryFile,
       installedAt: new Date().toISOString()
     },
-    manifest
+    manifest,
+    productionGate
   }
 }
 
@@ -464,4 +499,54 @@ async function readUrlText(targetUrl: string): Promise<string> {
   }
 
   return await response.text()
+}
+
+async function readProviderArtifacts(
+  manifestUrl: string,
+  manifest: ProviderBundleManifest
+): Promise<{ contentByPath: Record<string, string> }> {
+  const artifactPaths = new Set<string>((manifest.artifacts || []).map((artifact) => artifact.path))
+  artifactPaths.add(manifest.entry)
+
+  const contentByPath: Record<string, string> = {}
+  for (const artifactPath of artifactPaths) {
+    const pathCheck = validateProviderEntryPath(artifactPath)
+    if (!pathCheck.valid || !pathCheck.normalizedPath) {
+      throw new Error(pathCheck.message || 'Provider artifact path invalid')
+    }
+    const artifactUrl = new URL(pathCheck.normalizedPath, manifestUrl).toString()
+    contentByPath[pathCheck.normalizedPath] = await readUrlText(artifactUrl)
+  }
+  return { contentByPath }
+}
+
+function getTrustedPublishersFromEnv(): TrustedPublisherRecord[] {
+  const raw =
+    process.env.SIGHTFLOW_PROVIDER_TRUSTED_PUBLISHERS_JSON ||
+    process.env.SIGHTFLOW_TRUSTED_PROVIDER_PUBLISHERS_JSON ||
+    ''
+  if (!raw.trim()) return []
+
+  try {
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return []
+    return parsed.filter(isTrustedPublisherRecord)
+  } catch {
+    return []
+  }
+}
+
+function isTrustedPublisherRecord(value: unknown): value is TrustedPublisherRecord {
+  if (!value || typeof value !== 'object') return false
+  const record = value as Partial<TrustedPublisherRecord>
+  return (
+    typeof record.publisherId === 'string' &&
+    typeof record.displayName === 'string' &&
+    typeof record.publicKeyPem === 'string' &&
+    typeof record.keyId === 'string' &&
+    (record.trustSource === 'builtin' ||
+      record.trustSource === 'user_added' ||
+      record.trustSource === 'enterprise_policy') &&
+    typeof record.trustedAt === 'string'
+  )
 }
