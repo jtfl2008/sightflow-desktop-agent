@@ -65,6 +65,10 @@ import type { ProviderInput, ProviderInputChannelContext } from '../core/session
 import { ProviderLifecycleStore } from './provider-security/provider-lifecycle-store'
 import { evaluateProviderProductionGate } from './provider-security/provider-production-gate'
 import { validateProviderEntryPath } from './provider-security/provider-manifest-security'
+import {
+  loadLifecycleInstalledProviderFromUserData,
+  reconcileProviderLifecycleWithSettings
+} from './provider-security/provider-recovery-reconciliation'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
 const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260428'
@@ -425,6 +429,17 @@ app.whenReady().then(async () => {
       createRecoveryReconciliationDiagnosticsAdapter(auditStore)
     ])
   )
+
+  await reconcileProviderLifecycleWithSettings({
+    settings: normalizeSettings(settingsStore.store),
+    settingsStore,
+    providerLifecycleStore,
+    auditStore,
+    loadInstalledProviderManifest: getInstalledProviderManifest,
+    loadLifecycleInstalledProvider: (providerId, version) =>
+      loadLifecycleInstalledProviderFromUserData(app.getPath('userData'), providerId, version),
+    evaluateInstalledProviderGate
+  })
 
   // ── Settings 持久化 ──
   ipcMain.handle('settings:getAll', async () => {

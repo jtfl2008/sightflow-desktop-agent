@@ -85,6 +85,10 @@ export class ProviderLifecycleStore {
     return this.getState().activePointersByProviderId[providerId]
   }
 
+  replaceStateForRecovery(state: ProviderLifecycleStoreShape): void {
+    this.backend.set('providerLifecycle', normalizeShape(state))
+  }
+
   commitInstallOrUpdate(
     operation: 'install' | 'update',
     candidate: ProviderLifecycleCandidate
