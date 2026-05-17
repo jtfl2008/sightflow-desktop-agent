@@ -9,6 +9,8 @@ import {
 
 const SENSITIVE_CONTENT_PATTERN =
   /(data:image\/|[A-Za-z0-9+/]{200,}={0,2}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|(?:\+\d[\d\s().-]{7,}\d|\b\d{3,4}[-.\s]\d{3,4}[-.\s]\d{3,4}\b)|Bearer\s+|sk-[A-Za-z0-9_-]+|\/(?:Users|home|workspace|tmp|var|private)\/)/i
+const HASH_ASSIGNMENT_PATTERN =
+  /\b(?:contactHash|contactKeyHash|sampleIdHash)\s*[:=]\s*([A-Za-z0-9_@.+-]{1,128})/g
 
 export function exportDiagnosticsRecord(
   record: DiagnosticsRecordView,
@@ -163,6 +165,12 @@ function collectUnsafeHashPaths(value: unknown): string[] {
   const paths: string[] = []
   function visit(current: unknown, path: string): void {
     if (current === null || current === undefined) return
+    if (typeof current === 'string') {
+      if (isHashAssignmentTextPath(path) && containsUnsafeHashAssignment(current)) {
+        paths.push(path)
+      }
+      return
+    }
     if (Array.isArray(current)) {
       current.forEach((item, index) => visit(item, `${path}[${index}]`))
       return
@@ -181,6 +189,25 @@ function collectUnsafeHashPaths(value: unknown): string[] {
   }
   visit(value, '')
   return Array.from(new Set(paths)).sort()
+}
+
+function containsUnsafeHashAssignment(value: string): boolean {
+  HASH_ASSIGNMENT_PATTERN.lastIndex = 0
+  let match: RegExpExecArray | null = HASH_ASSIGNMENT_PATTERN.exec(value)
+  while (match) {
+    const candidate = match[1]?.trim()
+    if (candidate && !isDiagnosticsContactHash(candidate)) return true
+    match = HASH_ASSIGNMENT_PATTERN.exec(value)
+  }
+  return false
+}
+
+function isHashAssignmentTextPath(path: string): boolean {
+  return (
+    path === 'recordId' ||
+    path === 'sourcePartitionId' ||
+    /^timeline\[\d+\]\.(summary|omittedReason|errorCode)$/.test(path)
+  )
 }
 
 function isHashFieldKey(key: string): boolean {

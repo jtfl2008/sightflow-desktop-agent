@@ -93,8 +93,88 @@ if (!cachedPlaintextDetailHash.ok) {
   assert.equal(cachedPlaintextDetailHash.errorCode, 'export_contains_sensitive_field')
   assert.deepEqual(cachedPlaintextDetailHash.blockedTypes, ['plaintext_contact'])
   assert.deepEqual(cachedPlaintextDetailHash.omittedFieldPaths, [
-    'timeline[0].detail.contactKeyHash'
+    'timeline[0].detail.contactKeyHash',
+    'timeline[0].summary'
   ])
+}
+
+const cachedPlaintextSummaryOnlyJson = exportDiagnosticsRecord(
+  {
+    ...baseRecord,
+    timeline: [
+      {
+        capability: 'customer_memory',
+        source: 'runtime',
+        status: 'ok',
+        summary: 'cached contactHash=AliceBob',
+        detail: { type: 'customer_memory' }
+      }
+    ]
+  },
+  'json'
+)
+assert.equal(cachedPlaintextSummaryOnlyJson.ok, false)
+if (!cachedPlaintextSummaryOnlyJson.ok) {
+  assert.equal(cachedPlaintextSummaryOnlyJson.errorCode, 'export_contains_sensitive_field')
+  assert.deepEqual(cachedPlaintextSummaryOnlyJson.blockedTypes, ['plaintext_contact'])
+  assert.deepEqual(cachedPlaintextSummaryOnlyJson.omittedFieldPaths, ['timeline[0].summary'])
+}
+
+const cachedPlaintextTextFieldsMarkdown = exportDiagnosticsRecord(
+  {
+    ...baseRecord,
+    recordId: 'runtime:contactHash=JohnDoe1',
+    sourcePartitionId: 'runtime:sampleIdHash=customer1',
+    timeline: [
+      {
+        capability: 'vision',
+        source: 'vision_eval',
+        status: 'warning',
+        summary: 'safe summary',
+        detail: { type: 'vision' },
+        omittedReason: 'contactKeyHash=wechatid1' as any,
+        errorCode: 'sampleIdHash=AliceBob'
+      }
+    ]
+  },
+  'markdown'
+)
+assert.equal(cachedPlaintextTextFieldsMarkdown.ok, false)
+if (!cachedPlaintextTextFieldsMarkdown.ok) {
+  assert.equal(cachedPlaintextTextFieldsMarkdown.errorCode, 'export_contains_sensitive_field')
+  assert.deepEqual(cachedPlaintextTextFieldsMarkdown.blockedTypes, ['plaintext_contact'])
+  assert.deepEqual(cachedPlaintextTextFieldsMarkdown.omittedFieldPaths, [
+    'recordId',
+    'sourcePartitionId',
+    'timeline[0].errorCode',
+    'timeline[0].omittedReason'
+  ])
+}
+
+const cachedSafeHashAssignments = exportDiagnosticsRecord(
+  {
+    ...baseRecord,
+    recordId: 'runtime:contactHash=ch_abcdef123456',
+    sourcePartitionId: 'runtime:sampleIdHash=0123456789abcdef',
+    timeline: [
+      {
+        capability: 'vision',
+        source: 'vision_eval',
+        status: 'ok',
+        summary: 'sampleIdHash=ch_1234567890abcdef',
+        detail: {
+          type: 'vision',
+          sampleIdHash: '0123456789abcdef'
+        },
+        errorCode: 'contactKeyHash=abcdef1234567890'
+      }
+    ]
+  },
+  'json'
+)
+assert.equal(cachedSafeHashAssignments.ok, true)
+if (cachedSafeHashAssignments.ok) {
+  assert.equal(cachedSafeHashAssignments.content.includes('AliceBob'), false)
 }
 
 console.log('diagnostics-export mock tests passed')
