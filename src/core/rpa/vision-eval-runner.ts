@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFile, readdir, stat } from 'node:fs/promises'
-import path from 'node:path'
+import * as path from 'node:path'
 import type {
   ExpectedBoxSelectTask,
   ExpectedLayoutTask,

@@ -1,5 +1,5 @@
 import { mkdir, writeFile } from 'node:fs/promises'
-import path from 'node:path'
+import * as path from 'node:path'
 import { renderVisionEvalMarkdown, runVisionEval } from '../src/core/rpa/vision-eval-runner'
 
 async function main(): Promise<void> {
