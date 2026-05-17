@@ -125,10 +125,13 @@ function withContactHashRedaction(
   contactHashCandidate?: string
 ): DiagnosticsRedactionSummary {
   if (!contactHashCandidate || isDiagnosticsContactHash(contactHashCandidate)) return redaction
+  const blockedTypes: DiagnosticsRedactionSummary['blockedTypes'] = Array.from(
+    new Set([...redaction.blockedTypes, 'plaintext_contact'])
+  ).sort() as DiagnosticsRedactionSummary['blockedTypes']
   return {
     ...redaction,
     status: 'blocked',
-    blockedTypes: Array.from(new Set([...redaction.blockedTypes, 'plaintext_contact'])).sort(),
+    blockedTypes,
     omittedFieldPaths: Array.from(new Set([...redaction.omittedFieldPaths, 'contactHash'])).sort()
   }
 }

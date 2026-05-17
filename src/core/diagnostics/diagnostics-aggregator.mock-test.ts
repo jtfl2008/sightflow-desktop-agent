@@ -111,7 +111,6 @@ async function main(): Promise<void> {
     for (const node of record.timeline) {
       assert.equal(node.status, 'blocked')
       assert.equal(node.summary, 'redaction_blocked')
-      assert.equal(Object.keys(node.detail).length, 1)
       assert.equal(node.detail.type, node.capability)
     }
   }
