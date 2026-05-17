@@ -133,6 +133,7 @@ interface AppSettings {
   chatProvider: {
     manifestUrl: string
     installed: InstalledProviderInfo | null
+    previousInstalled?: InstalledProviderInfo | null
     config: Record<string, any>
   }
   defaultCaptureStrategy: CaptureStrategy
@@ -2175,6 +2176,7 @@ function ProviderProductionInstallPage(): React.JSX.Element {
       id: 'official-filesystem',
       name: 'official-filesystem',
       version: '1.2.3',
+      manifestUrl: 'https://sightflow.dev/providers/official-filesystem/manifest.json',
       trustLevel: 'trusted_signed',
       badge: '已签名，来源可信，可生产安装',
       reasonCodes: [],
@@ -2189,6 +2191,7 @@ function ProviderProductionInstallPage(): React.JSX.Element {
       id: 'local-debug-helper',
       name: 'local-debug-helper',
       version: '0.1.0',
+      manifestUrl: 'file:///tmp/local-debug-helper/manifest.json',
       trustLevel: 'debug_only',
       badge: '未签名，仅允许本地调试，不能生产安装',
       reasonCodes: ['provider.security.missing_signature'],
@@ -2203,6 +2206,7 @@ function ProviderProductionInstallPage(): React.JSX.Element {
       id: 'third-party-unknown',
       name: 'third-party-unknown',
       version: '0.9.1',
+      manifestUrl: 'https://example.invalid/providers/third-party-unknown/manifest.json',
       trustLevel: 'blocked',
       badge: '签名无效，已阻断',
       reasonCodes: ['provider.security.signature_invalid'],
@@ -2217,6 +2221,7 @@ function ProviderProductionInstallPage(): React.JSX.Element {
       id: 'over-privileged',
       name: 'over-privileged',
       version: '2.0.0',
+      manifestUrl: 'https://example.invalid/providers/over-privileged/manifest.json',
       trustLevel: 'blocked',
       badge: '权限超范围，已阻断生产安装',
       reasonCodes: ['provider.security.permission_denied'],
@@ -2231,8 +2236,35 @@ function ProviderProductionInstallPage(): React.JSX.Element {
   const [selectedId, setSelectedId] = useState(candidates[0].id)
   const [showUpdate, setShowUpdate] = useState(false)
   const [showRollback, setShowRollback] = useState(false)
+  const [busyAction, setBusyAction] = useState<'install' | 'update' | 'rollback' | null>(null)
   const selected = candidates.find((item) => item.id === selectedId) || candidates[0]
   const trustTone = selected.trustLevel === 'trusted_signed' ? 'success' : selected.trustLevel === 'debug_only' ? 'warning' : 'danger'
+
+  const runProviderLifecycleAction = useCallback(
+    async (action: 'install' | 'update' | 'rollback') => {
+      setBusyAction(action)
+      try {
+        const channel =
+          action === 'rollback'
+            ? 'provider:rollback'
+            : action === 'update'
+              ? 'provider:updateFromUrl'
+              : 'provider:installFromUrl'
+        const result =
+          action === 'rollback'
+            ? await window.electron?.invoke(channel)
+            : await window.electron?.invoke(channel, selected.manifestUrl)
+        if (result?.success) {
+          showToast(action === 'install' ? 'Provider 已通过生产 gate 安装' : action === 'update' ? 'Provider 已通过生产 gate 更新' : 'Provider 已回滚到上一可信版本', 'success')
+        } else {
+          showToast(result?.error || 'Provider 生产 gate 阻断', 'error')
+        }
+      } finally {
+        setBusyAction(null)
+      }
+    },
+    [selected.manifestUrl]
+  )
 
   return (
     <div className="draft-dashboard provider-security-page">
@@ -2284,10 +2316,12 @@ function ProviderProductionInstallPage(): React.JSX.Element {
             ))}
           </div>
           <div className="review-actions">
-            <button className="review-btn primary" disabled={!selected.installAllowed}>安装到生产</button>
+            <button className="review-btn primary" disabled={!selected.installAllowed || busyAction !== null} onClick={() => void runProviderLifecycleAction('install')}>
+              {busyAction === 'install' ? '安装中' : '安装到生产'}
+            </button>
             <button className="review-btn secondary" disabled={selected.trustLevel !== 'debug_only'}>在调试台打开</button>
-            <button className="review-btn secondary" onClick={() => setShowUpdate(true)}>更新确认</button>
-            <button className="review-btn danger" onClick={() => setShowRollback(true)}>回滚确认</button>
+            <button className="review-btn secondary" disabled={busyAction !== null} onClick={() => setShowUpdate(true)}>更新确认</button>
+            <button className="review-btn danger" disabled={busyAction !== null} onClick={() => setShowRollback(true)}>回滚确认</button>
           </div>
           {selected.reasonCodes.length ? <ErrorBanner message={selected.reasonCodes.join('、')} /> : null}
         </section>
@@ -2323,12 +2357,12 @@ function ProviderProductionInstallPage(): React.JSX.Element {
         </table>
       </section>
       {showUpdate ? (
-        <ProviderSecurityDialog title="更新包含权限变更，需要确认" confirm="确认更新" onClose={() => setShowUpdate(false)}>
+        <ProviderSecurityDialog title="更新包含权限变更，需要确认" confirm="确认更新" onClose={() => setShowUpdate(false)} onConfirm={() => void runProviderLifecycleAction('update')}>
           <p>重复校验 publisher、keyId、signature、artifact digest 与新增权限。新增权限以 amber 标记，拒绝权限不会进入生产安装。</p>
         </ProviderSecurityDialog>
       ) : null}
       {showRollback ? (
-        <ProviderSecurityDialog title="回滚到上一可信版本" confirm="确认回滚" danger onClose={() => setShowRollback(false)}>
+        <ProviderSecurityDialog title="回滚到上一可信版本" confirm="确认回滚" danger onClose={() => setShowRollback(false)} onConfirm={() => void runProviderLifecycleAction('rollback')}>
           <p>仅允许回滚到本机已验签且未撤销的 previous trusted version；回滚事件写入脱敏审计。</p>
         </ProviderSecurityDialog>
       ) : null}
@@ -2341,12 +2375,14 @@ function ProviderSecurityDialog({
   confirm,
   danger,
   children,
+  onConfirm,
   onClose
 }: {
   title: string
   confirm: string
   danger?: boolean
   children: ReactNode
+  onConfirm?: () => void
   onClose: () => void
 }): React.JSX.Element {
   return (
@@ -2359,7 +2395,10 @@ function ProviderSecurityDialog({
         {children}
         <div className="review-actions">
           <button className="review-btn neutral" onClick={onClose}>取消</button>
-          <button className={danger ? 'review-btn danger' : 'review-btn primary'} onClick={onClose}>{confirm}</button>
+          <button className={danger ? 'review-btn danger' : 'review-btn primary'} onClick={() => {
+            onConfirm?.()
+            onClose()
+          }}>{confirm}</button>
         </div>
       </div>
     </div>

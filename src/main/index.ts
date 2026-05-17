@@ -25,6 +25,7 @@ import {
   loadBuiltinDoubaoProvider,
   loadInstalledProvider
 } from './provider-bundle'
+import { recordProviderLifecycleAudit } from './provider-lifecycle-audit'
 import {
   SkillEngineController,
   SkillPauseResult,
@@ -56,6 +57,7 @@ interface AppSettings {
   chatProvider: {
     manifestUrl: string
     installed: InstalledProviderInfo | null
+    previousInstalled: InstalledProviderInfo | null
     config: Record<string, any>
   }
   // 默认抓取策略（仅当 appType 没有 per-app 覆盖时生效）
@@ -124,6 +126,7 @@ const settingsStore = new StoreClass({
     chatProvider: {
       manifestUrl: '',
       installed: null,
+      previousInstalled: null,
       config: {}
     },
     defaultCaptureStrategy: 'auto',
@@ -390,6 +393,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('settings:set', async (_event, data: Record<string, any>) => {
     const current = normalizeSettings(settingsStore.store)
+    const chatProviderPatch = sanitizeChatProviderSettingsPatch(data.chatProvider, current.chatProvider)
     const next = {
       ...current,
       ...data,
@@ -399,7 +403,7 @@ app.whenReady().then(async () => {
       },
       chatProvider: {
         ...current.chatProvider,
-        ...(data.chatProvider || {}),
+        ...chatProviderPatch,
         config: {
           ...current.chatProvider.config,
           ...(data.chatProvider?.config || {})
@@ -416,27 +420,122 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('provider:installFromUrl', async (_event, manifestUrl: string) => {
+    const current = normalizeSettings(settingsStore.store)
     try {
       const result = await installProviderFromUrl(manifestUrl)
-      const current = normalizeSettings(settingsStore.store)
       settingsStore.set({
         ...current,
         chatProvider: {
           ...current.chatProvider,
           manifestUrl,
           installed: result.installed,
+          previousInstalled: current.chatProvider.installed,
           config: withSchemaDefaults(result.manifest.configSchema, current.chatProvider.config)
         }
       } as any)
+      recordProviderLifecycleAudit(auditStore, {
+        action: 'provider_install',
+        success: true,
+        manifestUrl,
+        installed: result.installed,
+        manifest: result.manifest,
+        gate: result.productionGate,
+        previousInstalled: current.chatProvider.installed
+      })
 
       return {
         success: true,
         installed: result.installed,
-        manifest: result.manifest
+        manifest: result.manifest,
+        productionGate: result.productionGate
       }
     } catch (error: any) {
+      recordProviderLifecycleAudit(auditStore, {
+        action: 'provider_install',
+        success: false,
+        manifestUrl,
+        previousInstalled: current.chatProvider.installed,
+        error: error?.message || String(error)
+      })
       return { success: false, error: error?.message || String(error) }
     }
+  })
+
+  ipcMain.handle('provider:updateFromUrl', async (_event, manifestUrl: string) => {
+    const current = normalizeSettings(settingsStore.store)
+    try {
+      const result = await installProviderFromUrl(manifestUrl)
+      settingsStore.set({
+        ...current,
+        chatProvider: {
+          ...current.chatProvider,
+          manifestUrl,
+          installed: result.installed,
+          previousInstalled: current.chatProvider.installed,
+          config: withSchemaDefaults(result.manifest.configSchema, current.chatProvider.config)
+        }
+      } as any)
+      recordProviderLifecycleAudit(auditStore, {
+        action: 'provider_update',
+        success: true,
+        manifestUrl,
+        installed: result.installed,
+        manifest: result.manifest,
+        gate: result.productionGate,
+        previousInstalled: current.chatProvider.installed
+      })
+      return {
+        success: true,
+        installed: result.installed,
+        manifest: result.manifest,
+        productionGate: result.productionGate
+      }
+    } catch (error: any) {
+      recordProviderLifecycleAudit(auditStore, {
+        action: 'provider_update',
+        success: false,
+        manifestUrl,
+        previousInstalled: current.chatProvider.installed,
+        error: error?.message || String(error)
+      })
+      return { success: false, error: error?.message || String(error) }
+    }
+  })
+
+  ipcMain.handle('provider:rollback', async () => {
+    const current = normalizeSettings(settingsStore.store)
+    const previousInstalled = current.chatProvider.previousInstalled
+    if (!previousInstalled) {
+      recordProviderLifecycleAudit(auditStore, {
+        action: 'provider_rollback',
+        success: false,
+        installed: current.chatProvider.installed,
+        error: 'No trusted previous provider version is available'
+      })
+      return { success: false, error: '没有可回滚的可信 Provider 版本' }
+    }
+
+    const manifest = await getInstalledProviderManifest(previousInstalled)
+    settingsStore.set({
+      ...current,
+      chatProvider: {
+        ...current.chatProvider,
+        installed: previousInstalled,
+        previousInstalled: current.chatProvider.installed,
+        manifestUrl: '',
+        config: manifest
+          ? withSchemaDefaults(manifest.configSchema, current.chatProvider.config)
+          : current.chatProvider.config
+      }
+    } as any)
+    recordProviderLifecycleAudit(auditStore, {
+      action: 'provider_rollback',
+      success: true,
+      installed: previousInstalled,
+      manifest,
+      previousInstalled: current.chatProvider.installed
+    })
+    return { success: true, installed: previousInstalled, manifest }
   })
 
   ipcMain.handle('provider:getInstalled', async () => {
@@ -1267,11 +1366,37 @@ function normalizeSettings(raw: any): AppSettings {
     chatProvider: {
       manifestUrl: raw?.chatProvider?.manifestUrl || raw?.providerManifestUrl || '',
       installed: raw?.chatProvider?.installed || null,
+      previousInstalled: raw?.chatProvider?.previousInstalled || null,
       config: rawProviderConfig
     },
     defaultCaptureStrategy: coerceStrategy(raw?.defaultCaptureStrategy, 'auto'),
     capture: normalizeCapture(raw?.capture)
   }
+}
+
+function sanitizeChatProviderSettingsPatch(
+  rawPatch: unknown,
+  current: AppSettings['chatProvider']
+): Partial<AppSettings['chatProvider']> {
+  if (!isRecord(rawPatch)) return {}
+
+  const next: Partial<AppSettings['chatProvider']> = {}
+  if (rawPatch.config && typeof rawPatch.config === 'object') {
+    next.config = rawPatch.config as Record<string, any>
+  }
+
+  const requestedInstalled = rawPatch.installed
+  const requestedManifestUrl = rawPatch.manifestUrl
+  const isClearingToBuiltin =
+    requestedInstalled === null && (requestedManifestUrl === '' || requestedManifestUrl === undefined)
+
+  if (isClearingToBuiltin) {
+    next.installed = null
+    next.previousInstalled = current.installed
+    next.manifestUrl = ''
+  }
+
+  return next
 }
 
 function withSchemaDefaults(
