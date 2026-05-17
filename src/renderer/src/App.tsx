@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from 'react'
+import { useState, useCallback, useRef, useEffect, useMemo, type ReactNode } from 'react'
 import { t } from './i18n'
 import logoUrl from './assets/logo.png'
 import './index.css'
@@ -2165,6 +2165,203 @@ function ProviderDebugConsolePage(): React.JSX.Element {
           </tbody>
         </table>
       </section>
+    </div>
+  )
+}
+
+function ProviderProductionInstallPage(): React.JSX.Element {
+  const candidates = [
+    {
+      id: 'official-filesystem',
+      name: 'official-filesystem',
+      version: '1.2.3',
+      trustLevel: 'trusted_signed',
+      badge: '已签名，来源可信，可生产安装',
+      reasonCodes: [],
+      permissions: ['network', 'provider_config', 'debug_log'],
+      denied: [],
+      sourceKind: 'official_registry',
+      signatureStatus: 'valid',
+      artifacts: ['provider.bundle.js', 'manifest.json'],
+      installAllowed: true
+    },
+    {
+      id: 'local-debug-helper',
+      name: 'local-debug-helper',
+      version: '0.1.0',
+      trustLevel: 'debug_only',
+      badge: '未签名，仅允许本地调试，不能生产安装',
+      reasonCodes: ['provider.security.missing_signature'],
+      permissions: ['debug_log'],
+      denied: [],
+      sourceKind: 'debug_console',
+      signatureStatus: 'missing',
+      artifacts: ['provider.bundle.js'],
+      installAllowed: false
+    },
+    {
+      id: 'third-party-unknown',
+      name: 'third-party-unknown',
+      version: '0.9.1',
+      trustLevel: 'blocked',
+      badge: '签名无效，已阻断',
+      reasonCodes: ['provider.security.signature_invalid'],
+      permissions: ['network'],
+      denied: [],
+      sourceKind: 'unknown_source',
+      signatureStatus: 'invalid',
+      artifacts: ['provider.bundle.js'],
+      installAllowed: false
+    },
+    {
+      id: 'over-privileged',
+      name: 'over-privileged',
+      version: '2.0.0',
+      trustLevel: 'blocked',
+      badge: '权限超范围，已阻断生产安装',
+      reasonCodes: ['provider.security.permission_denied'],
+      permissions: ['network'],
+      denied: ['filesystem', 'clipboard', 'shell', 'send_message'],
+      sourceKind: 'unknown_source',
+      signatureStatus: 'valid',
+      artifacts: ['provider.bundle.js'],
+      installAllowed: false
+    }
+  ]
+  const [selectedId, setSelectedId] = useState(candidates[0].id)
+  const [showUpdate, setShowUpdate] = useState(false)
+  const [showRollback, setShowRollback] = useState(false)
+  const selected = candidates.find((item) => item.id === selectedId) || candidates[0]
+  const trustTone = selected.trustLevel === 'trusted_signed' ? 'success' : selected.trustLevel === 'debug_only' ? 'warning' : 'danger'
+
+  return (
+    <div className="draft-dashboard provider-security-page">
+      <header className="draft-header">
+        <div>
+          <h1>Provider 生产安装</h1>
+          <p>生产安装必须通过签名、可信来源、artifact 摘要、权限与来源协议校验。</p>
+        </div>
+        <div className="draft-header-actions">
+          <StatusChip label="安全状态：良好" tone="success" />
+          <StatusChip label="debug_only 不进生产选择器" tone="info" />
+        </div>
+      </header>
+      <div className="provider-security-grid">
+        <section className="draft-panel provider-source-list">
+          <h2>Provider 来源</h2>
+          {candidates.map((candidate) => (
+            <button key={candidate.id} className={`provider-candidate ${candidate.id === selected.id ? 'active' : ''} ${candidate.trustLevel}`} onClick={() => setSelectedId(candidate.id)}>
+              <strong>{candidate.name}</strong>
+              <StatusChip label={candidate.trustLevel} tone={candidate.trustLevel === 'trusted_signed' ? 'success' : candidate.trustLevel === 'debug_only' ? 'warning' : 'danger'} />
+              <span>v{candidate.version} · {candidate.reasonCodes[0] || '可生产安装'}</span>
+            </button>
+          ))}
+          <div className="memory-banner warning">
+            <strong>调试控制台（本地隔离）</strong>
+            <p>source=debug_console；不会发送消息、不会创建草稿、不会写入正式审计。</p>
+          </div>
+        </section>
+
+        <section className="draft-panel install-summary-panel">
+          <div className="panel-title-row">
+            <h2>安装摘要</h2>
+            <StatusChip label={selected.badge} tone={trustTone} />
+          </div>
+          <dl className="status-list">
+            <dt>providerId</dt><dd>{selected.id}</dd>
+            <dt>version</dt><dd>{selected.version}</dd>
+            <dt>trustLevel</dt><dd>{selected.trustLevel}</dd>
+            <dt>signature</dt><dd>{selected.signatureStatus}</dd>
+            <dt>sourceKind</dt><dd>{selected.sourceKind}</dd>
+          </dl>
+          <div className="artifact-checklist">
+            <h3>Artifact 摘要</h3>
+            {selected.artifacts.map((artifact) => (
+              <div key={artifact} className="debug-check success">
+                <StatusChip label={selected.trustLevel === 'blocked' && selected.reasonCodes.includes('provider.security.artifact_hash_mismatch') ? '失败' : '通过'} tone={selected.reasonCodes.includes('provider.security.artifact_hash_mismatch') ? 'danger' : 'success'} />
+                <span>{artifact} · sha256 verified</span>
+              </div>
+            ))}
+          </div>
+          <div className="review-actions">
+            <button className="review-btn primary" disabled={!selected.installAllowed}>安装到生产</button>
+            <button className="review-btn secondary" disabled={selected.trustLevel !== 'debug_only'}>在调试台打开</button>
+            <button className="review-btn secondary" onClick={() => setShowUpdate(true)}>更新确认</button>
+            <button className="review-btn danger" onClick={() => setShowRollback(true)}>回滚确认</button>
+          </div>
+          {selected.reasonCodes.length ? <ErrorBanner message={selected.reasonCodes.join('、')} /> : null}
+        </section>
+
+        <section className="draft-panel permission-diff-panel">
+          <h2>权限 diff</h2>
+          <div className="permission-list allowed">
+            <strong>允许权限</strong>
+            {selected.permissions.map((permission) => <span key={permission}>{permission}</span>)}
+          </div>
+          <div className="permission-list denied">
+            <strong>拒绝权限</strong>
+            {(selected.denied.length ? selected.denied : ['无']).map((permission) => <span key={permission}>{permission}</span>)}
+          </div>
+          {selected.denied.length ? <div className="memory-banner warning">高风险权限受平台策略禁止，在“严格”模式下不可用。</div> : null}
+        </section>
+      </div>
+      <section className="draft-panel debug-history-panel">
+        <h2>审计详情</h2>
+        <table className="audit-table">
+          <tbody>
+            {candidates.map((candidate) => (
+              <tr key={candidate.id}>
+                <td>provider_install</td>
+                <td>{candidate.id}</td>
+                <td>{candidate.version}</td>
+                <td>{candidate.trustLevel}</td>
+                <td>{candidate.reasonCodes.join(', ') || 'allowed'}</td>
+                <td>{'{ redacted metadata }'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+      {showUpdate ? (
+        <ProviderSecurityDialog title="更新包含权限变更，需要确认" confirm="确认更新" onClose={() => setShowUpdate(false)}>
+          <p>重复校验 publisher、keyId、signature、artifact digest 与新增权限。新增权限以 amber 标记，拒绝权限不会进入生产安装。</p>
+        </ProviderSecurityDialog>
+      ) : null}
+      {showRollback ? (
+        <ProviderSecurityDialog title="回滚到上一可信版本" confirm="确认回滚" danger onClose={() => setShowRollback(false)}>
+          <p>仅允许回滚到本机已验签且未撤销的 previous trusted version；回滚事件写入脱敏审计。</p>
+        </ProviderSecurityDialog>
+      ) : null}
+    </div>
+  )
+}
+
+function ProviderSecurityDialog({
+  title,
+  confirm,
+  danger,
+  children,
+  onClose
+}: {
+  title: string
+  confirm: string
+  danger?: boolean
+  children: ReactNode
+  onClose: () => void
+}): React.JSX.Element {
+  return (
+    <div className="memory-modal-backdrop">
+      <div className="memory-modal">
+        <div className="panel-title-row">
+          <h2>{title}</h2>
+          <button className="icon-action" onClick={onClose}>×</button>
+        </div>
+        {children}
+        <div className="review-actions">
+          <button className="review-btn neutral" onClick={onClose}>取消</button>
+          <button className={danger ? 'review-btn danger' : 'review-btn primary'} onClick={onClose}>{confirm}</button>
+        </div>
+      </div>
     </div>
   )
 }

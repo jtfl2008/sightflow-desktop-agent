@@ -1742,3 +1742,83 @@ textarea.form-input {
     grid-template-columns: minmax(340px, 1fr);
   }
 }
+
+/* ─── Provider Production Security ─── */
+.provider-security-grid {
+  display: grid;
+  grid-template-columns: 300px minmax(440px, 1fr) 340px;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.provider-candidate {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 12px;
+  margin-bottom: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  text-align: left;
+}
+
+.provider-candidate.active {
+  border-color: #2563eb;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.provider-candidate span:last-child {
+  grid-column: 1 / -1;
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.provider-candidate.debug_only {
+  background: #fffbeb;
+}
+
+.provider-candidate.blocked {
+  background: #fef2f2;
+}
+
+.artifact-checklist {
+  margin: 12px 0;
+}
+
+.permission-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.permission-list span {
+  padding: 8px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: #374151;
+  font-size: 12px;
+}
+
+.permission-list.allowed {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.permission-list.denied {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+@media (max-width: 1180px) {
+  .provider-security-grid {
+    grid-template-columns: minmax(340px, 1fr);
+  }
+}
