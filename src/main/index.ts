@@ -32,6 +32,7 @@ import {
   startSkillServer,
   stopSkillServer
 } from './skill-server'
+import { AuditStore } from './audit-store'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
 const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260428'
@@ -129,6 +130,7 @@ const settingsStore = new StoreClass({
 let runtime: RuntimeHost<ReturnType<typeof createInitialGenericChannelState>> | null = null
 let runtimeDevice: DesktopDevice | null = null
 let settingsWindow: BrowserWindow | null = null
+const auditStore = new AuditStore()
 
 function createWindow(): void {
   // Create the browser window.
@@ -483,13 +485,32 @@ app.whenReady().then(async () => {
 
   // ── Runtime / Session IPC（沿用 legacy engine:* 通道名） ──
   ipcMain.handle('engine:start', async (_event, config) => {
+    auditStore.record({
+      category: 'engine',
+      action: 'start_requested',
+      metadata: { appType: config?.appType }
+    })
     const result = await startEngineCore(config)
+    auditStore.record({
+      category: result.ok ? 'engine' : 'error',
+      action: result.ok ? 'started' : 'start_failed',
+      severity: result.ok ? 'info' : 'error',
+      message: result.ok ? undefined : result.message || result.reason,
+      metadata: { reason: result.reason }
+    })
     if (result.ok) return { success: true }
     return { success: false, error: result.message || result.reason }
   })
 
   ipcMain.handle('engine:stop', async (_event, reason?: string) => {
     const result = await stopEngineCore(reason || 'ipc_stop')
+    auditStore.record({
+      category: result.ok ? 'engine' : 'error',
+      action: result.ok ? 'stopped' : 'stop_failed',
+      severity: result.ok ? 'info' : 'error',
+      message: result.ok ? reason || 'ipc_stop' : result.message || result.reason,
+      metadata: { reason: reason || result.reason }
+    })
     if (result.ok) return { success: true }
     return { success: false, error: result.message || result.reason }
   })
@@ -500,6 +521,15 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('engine:updateConfig', async (_event, config) => {
     const settings = normalizeSettings(config || settingsStore.store)
+    auditStore.record({
+      category: 'engine',
+      action: 'config_updated',
+      metadata: {
+        appType: settings.appType,
+        captureStrategy: resolveSettingsStrategy(settings.appType, settings),
+        providerId: settings.chatProvider.installed?.id || BUILTIN_DOUBAO_PROVIDER_ID
+      }
+    })
     if (runtimeDevice) {
       // setApiKey 在 BoxSelectDevice 上是 no-op，对 RPADevice 才生效。
       runtimeDevice.setApiKey(settings.vision.apiKey)
@@ -519,6 +549,18 @@ app.whenReady().then(async () => {
       baseURL: FIXED_ARK_BASE_URL
     })
     return client.testConnection()
+  })
+
+  ipcMain.handle('audit:list', async (_event, limit?: number) => {
+    return auditStore.getRecent(typeof limit === 'number' ? limit : undefined)
+  })
+
+  ipcMain.handle('audit:exportJson', async (_event, limit?: number) => {
+    return auditStore.exportJson(typeof limit === 'number' ? limit : undefined)
+  })
+
+  ipcMain.handle('audit:exportMarkdown', async (_event, limit?: number) => {
+    return auditStore.exportMarkdown(typeof limit === 'number' ? limit : undefined)
   })
 
   // ── Capture / 框选向导 IPC ──
@@ -685,6 +727,12 @@ async function startEngineCore(rawConfig?: any): Promise<SkillStartResult> {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('engine:log', { type, content })
       }
+      auditStore.record({
+        category: mapLogToAuditCategory(type, content),
+        action: type,
+        severity: type === 'error' ? 'error' : 'info',
+        message: content
+      })
     }
 
     let device: DesktopDevice
@@ -693,6 +741,11 @@ async function startEngineCore(rawConfig?: any): Promise<SkillStartResult> {
       const built = await buildDevice(appType, settings, settings.vision.apiKey, log)
       device = built.device
       strategy = built.strategy
+      auditStore.record({
+        category: 'layout',
+        action: 'strategy_selected',
+        metadata: { appType, strategy }
+      })
     } catch (err: any) {
       const message = err?.message || String(err)
       if (message === 'user_cancelled_box_select_wizard') {
@@ -961,4 +1014,24 @@ function withSchemaDefaults(
     }
   }
   return next
+}
+
+function mapLogToAuditCategory(
+  type: 'thinking' | 'reply' | 'skip' | 'error',
+  content: string
+): 'engine' | 'layout' | 'provider' | 'draft' | 'message' | 'error' {
+  if (type === 'error') return 'error'
+  if (content.includes('草稿')) return 'draft'
+  if (
+    content.includes('布局') ||
+    content.includes('抓取策略') ||
+    content.includes('识别聊天窗口')
+  ) {
+    return 'layout'
+  }
+  if (type === 'reply') return 'message'
+  if (content.includes('回复') || content.includes('Provider') || content.includes('服务')) {
+    return 'provider'
+  }
+  return 'engine'
 }
