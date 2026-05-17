@@ -15,7 +15,7 @@ const WEBHOOK_BODY_KEY = /webhookBody|requestBody|responseBody|headers/i
 const DATA_IMAGE_PATTERN = /data:image\//i
 const LONG_BASE64_PATTERN = /\b[A-Za-z0-9+/]{200,}={0,2}\b/
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
-const PHONE_PATTERN = /(?:\+?\d[\d\s().-]{7,}\d)/
+const PHONE_PATTERN = /(?:\+\d[\d\s().-]{7,}\d|\b\d{3,4}[-.\s]\d{3,4}[-.\s]\d{3,4}\b)/
 const SECRET_VALUE_PATTERN =
   /(Bearer\s+[A-Za-z0-9._-]+|sk-[A-Za-z0-9_-]+|(?:api[-_]?key|token|secret|password)[:=]\s*[A-Za-z0-9._-]+)/i
 const URL_QUERY_SECRET_PATTERN = /https?:\/\/\S+[?&](token|secret|api_key|apikey|key)=/i

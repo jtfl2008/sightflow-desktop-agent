@@ -40,28 +40,32 @@ const debugAdapter: DiagnosticsSourceAdapter = {
   }
 }
 
-const runtimeOnly = await queryDiagnostics([runtimeAdapter, debugAdapter], {
-  source: 'runtime',
-  runId: 'run-abc'
-})
-assert.equal(runtimeOnly.ok, true)
-if (runtimeOnly.ok) {
-  assert.equal(runtimeOnly.records.length, 1)
-  assert.equal(runtimeOnly.records[0].source, 'runtime')
-  assert.equal(runtimeOnly.records[0].relatedSources.length, 0)
-  assert.equal(runtimeOnly.records[0].timeline.length, 9)
-  assert.equal(runtimeOnly.records[0].timeline.find((node) => node.capability === 'vision')?.status, 'not_recorded')
+async function main(): Promise<void> {
+  const runtimeOnly = await queryDiagnostics([runtimeAdapter, debugAdapter], {
+    source: 'runtime',
+    runId: 'run-abc'
+  })
+  assert.equal(runtimeOnly.ok, true)
+  if (runtimeOnly.ok) {
+    assert.equal(runtimeOnly.records.length, 1)
+    assert.equal(runtimeOnly.records[0].source, 'runtime')
+    assert.equal(runtimeOnly.records[0].relatedSources.length, 0)
+    assert.equal(runtimeOnly.records[0].timeline.length, 9)
+    assert.equal(runtimeOnly.records[0].timeline.find((node) => node.capability === 'vision')?.status, 'not_recorded')
+  }
+
+  const related = await queryDiagnostics([runtimeAdapter, debugAdapter], {
+    source: 'runtime',
+    runId: 'run-abc',
+    includeRelatedSources: true
+  })
+  assert.equal(related.ok, true)
+  if (related.ok) {
+    assert.equal(related.records[0].relatedSources[0].source, 'debug_console')
+    assert.equal(related.records[0].relatedSources[0].count, 1)
+  }
+
+  console.log('diagnostics-aggregator mock tests passed')
 }
 
-const related = await queryDiagnostics([runtimeAdapter, debugAdapter], {
-  source: 'runtime',
-  runId: 'run-abc',
-  includeRelatedSources: true
-})
-assert.equal(related.ok, true)
-if (related.ok) {
-  assert.equal(related.records[0].relatedSources[0].source, 'debug_console')
-  assert.equal(related.records[0].relatedSources[0].count, 1)
-}
-
-console.log('diagnostics-aggregator mock tests passed')
+void main()

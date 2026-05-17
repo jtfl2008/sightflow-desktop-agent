@@ -7,7 +7,7 @@ import {
 } from './diagnostics-types'
 
 const SENSITIVE_CONTENT_PATTERN =
-  /(data:image\/|[A-Za-z0-9+/]{200,}={0,2}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|(?:\+?\d[\d\s().-]{7,}\d)|Bearer\s+|sk-[A-Za-z0-9_-]+|\/(?:Users|home|workspace|tmp|var|private)\/)/i
+  /(data:image\/|[A-Za-z0-9+/]{200,}={0,2}|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}|(?:\+\d[\d\s().-]{7,}\d|\b\d{3,4}[-.\s]\d{3,4}[-.\s]\d{3,4}\b)|Bearer\s+|sk-[A-Za-z0-9_-]+|\/(?:Users|home|workspace|tmp|var|private)\/)/i
 
 export function exportDiagnosticsRecord(
   record: DiagnosticsRecordView,

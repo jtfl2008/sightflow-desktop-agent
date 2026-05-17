@@ -22,10 +22,12 @@ export async function queryDiagnostics(
 ): Promise<DiagnosticsQueryResponse> {
   const validated = validateDiagnosticsQuery(query)
   if (!validated.ok) {
+    const errorCode = 'errorCode' in validated ? validated.errorCode : 'empty_query'
+    const message = 'message' in validated ? validated.message : 'Invalid diagnostics query'
     return {
       ok: false,
-      errorCode: validated.errorCode,
-      message: validated.message
+      errorCode,
+      message
     }
   }
 

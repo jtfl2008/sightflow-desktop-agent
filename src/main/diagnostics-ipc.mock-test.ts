@@ -17,23 +17,27 @@ const adapter: DiagnosticsSourceAdapter = {
   }
 }
 
-registerDiagnosticsIpc(fakeIpcMain as any, new DiagnosticsStore([adapter]))
+async function main(): Promise<void> {
+  registerDiagnosticsIpc(fakeIpcMain as any, new DiagnosticsStore([adapter]))
 
-const invalidSource = await handlers.get('diagnostics:query')?.(null, {
-  source: 'invalid',
-  runId: 'run-abc'
-})
-assert.deepEqual(invalidSource, {
-  ok: false,
-  errorCode: 'invalid_source',
-  message: 'Invalid diagnostics source'
-})
+  const invalidSource = await handlers.get('diagnostics:query')?.(null, {
+    source: 'invalid',
+    runId: 'run-abc'
+  })
+  assert.deepEqual(invalidSource, {
+    ok: false,
+    errorCode: 'invalid_source',
+    message: 'Invalid diagnostics source'
+  })
 
-const plaintext = await handlers.get('diagnostics:query')?.(null, {
-  source: 'runtime',
-  contactHash: 'user@example.com'
-})
-assert.equal((plaintext as any).ok, false)
-assert.equal((plaintext as any).errorCode, 'plaintext_contact_rejected')
+  const plaintext = await handlers.get('diagnostics:query')?.(null, {
+    source: 'runtime',
+    contactHash: 'user@example.com'
+  })
+  assert.equal((plaintext as any).ok, false)
+  assert.equal((plaintext as any).errorCode, 'plaintext_contact_rejected')
 
-console.log('diagnostics-ipc mock tests passed')
+  console.log('diagnostics-ipc mock tests passed')
+}
+
+void main()
