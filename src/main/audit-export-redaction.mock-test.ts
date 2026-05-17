@@ -204,6 +204,79 @@ function testRawBackendSourceSummaryExportRedaction(): void {
   )
 }
 
+function testRawBackendCustomerProfileScalarExportRedaction(): void {
+  const favoriteColor = 'PRIVATE profile note not caught by generic scanners'
+  const notes = 'ordinary profile scalar that must not leave raw backend export'
+  const store = new AuditStore({
+    backend: new MemoryAuditBackend([
+      {
+        id: 'raw-profile-scalar',
+        category: 'provider',
+        action: 'customer_profile.injected',
+        severity: 'info',
+        occurredAt: fixedNow().toISOString(),
+        metadata: {
+          customerProfile: {
+            profileId: 'p4',
+            version: 3,
+            contactKeyHash: 'abcdef123456',
+            injectedFieldPaths: ['preferenceNotes'],
+            expired: false,
+            omittedReason: 'none',
+            safetyHintApplied: true,
+            favoriteColor,
+            notes,
+            preferenceNotes: 'plain private preference',
+            sourceSummary: [
+              {
+                fieldPath: 'preferenceNotes',
+                source: 'user_entered',
+                confirmedByUser: true,
+                auditId: 'a4'
+              }
+            ]
+          }
+        }
+      }
+    ]),
+    now: fixedNow
+  })
+
+  const json = store.exportJson()
+  const markdown = store.exportMarkdown()
+  const parsed = JSON.parse(json)
+  const profile = parsed.records[0].metadata.customerProfile
+
+  for (const exported of [json, markdown]) {
+    assert.equal(exported.includes(favoriteColor), false)
+    assert.equal(exported.includes(notes), false)
+    assert.equal(exported.includes('plain private preference'), false)
+    assert.equal(exported.includes('abcdef123456'), true)
+    assert.equal(exported.includes('safetyHintApplied'), true)
+    assert.equal(exported.includes('preferenceNotes'), true)
+  }
+  assert.equal(profile.favoriteColor, undefined)
+  assert.equal(profile.notes, undefined)
+  assert.equal(profile.preferenceNotes, undefined)
+  assert.equal(parsed.blocked, false)
+  assert.equal(parsed.redaction.status, 'blocked')
+  assert.equal(parsed.redaction.unknownFieldCount, 0)
+  assert.ok(parsed.redaction.blockedTypes.includes('full_profile'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.customerProfile.favoriteColor'
+    )
+  )
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes('records[0].metadata.customerProfile.notes')
+  )
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.customerProfile.preferenceNotes'
+    )
+  )
+}
+
 function testUnknownNestedExportObjectBlocksRecords(): void {
   const store = new AuditStore({ backend: new MemoryAuditBackend(), now: fixedNow })
   store.record({
@@ -236,6 +309,7 @@ function main(): void {
   testCustomerMemoryExportRedaction()
   testForbiddenContentReturnsExportSummary()
   testRawBackendSourceSummaryExportRedaction()
+  testRawBackendCustomerProfileScalarExportRedaction()
   testUnknownNestedExportObjectBlocksRecords()
   console.log('audit export redaction mock tests passed')
 }

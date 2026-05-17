@@ -48,8 +48,6 @@ const LOCAL_PATH_PATTERN = /(?:\/Users\/|\/home\/|\/workspace\/|[A-Z]:\\)/i
 const ALLOWED_NESTED_OBJECT_PATHS = new Set([
   'metadata.artifactHashes',
   'metadata.channelContext',
-  'metadata.customerProfile',
-  'metadata.customerProfile.sourceSummary',
   'metadata.matchedKnowledge'
 ])
 
@@ -60,6 +58,17 @@ const ALLOWED_NESTED_OBJECT_PREFIXES = [
 ]
 
 const CUSTOMER_PROFILE_SOURCE_SUMMARY_PATH = 'metadata.customerProfile.sourceSummary'
+const CUSTOMER_PROFILE_PATH = 'metadata.customerProfile'
+const SAFE_CUSTOMER_PROFILE_KEYS = new Set([
+  'profileId',
+  'version',
+  'contactKeyHash',
+  'injectedFieldPaths',
+  'expired',
+  'omittedReason',
+  'safetyHintApplied',
+  'sourceSummary'
+])
 const SAFE_SOURCE_SUMMARY_SCALAR_KEYS = new Set([
   'fieldPath',
   'source',
@@ -171,6 +180,9 @@ function redactValue(
   state: RedactionState
 ): unknown {
   if (value === null || value === undefined) return value
+  if (normalizedPath === CUSTOMER_PROFILE_PATH) {
+    return redactCustomerProfile(value, recordPath, state)
+  }
   if (normalizedPath === CUSTOMER_PROFILE_SOURCE_SUMMARY_PATH) {
     return redactCustomerProfileSourceSummary(value, recordPath, state)
   }
@@ -202,6 +214,54 @@ function redactValue(
     if (redacted !== undefined) out[key] = redacted
   }
   return out
+}
+
+function redactCustomerProfile(
+  value: unknown,
+  recordPath: string,
+  state: RedactionState
+): unknown {
+  if (!isPlainRecord(value)) {
+    addBlocked(state, 'full_profile', recordPath)
+    return undefined
+  }
+
+  const out: Record<string, unknown> = {}
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = `${recordPath}.${key}`
+    if (!SAFE_CUSTOMER_PROFILE_KEYS.has(key)) {
+      addBlocked(state, 'full_profile', childPath)
+      continue
+    }
+
+    if (key === 'sourceSummary') {
+      const redacted = redactCustomerProfileSourceSummary(child, childPath, state)
+      if (redacted !== undefined) out[key] = redacted
+      continue
+    }
+
+    const redacted = redactCustomerProfileSafeField(child, childPath, state)
+    if (redacted !== undefined) out[key] = redacted
+  }
+  return out
+}
+
+function redactCustomerProfileSafeField(
+  value: unknown,
+  recordPath: string,
+  state: RedactionState
+): unknown {
+  if (value === null || value === undefined) return value
+  if (typeof value === 'string') return sanitizeString(value, recordPath, state)
+  if (typeof value === 'number' || typeof value === 'boolean') return value
+  if (Array.isArray(value)) {
+    return value
+      .map((item, index) => redactCustomerProfileSafeField(item, `${recordPath}[${index}]`, state))
+      .filter((item) => item !== undefined)
+  }
+
+  addBlocked(state, 'full_profile', recordPath)
+  return undefined
 }
 
 function redactCustomerProfileSourceSummary(
