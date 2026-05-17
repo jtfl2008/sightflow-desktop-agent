@@ -34,6 +34,7 @@ import {
 } from './skill-server'
 import { AuditStore } from './audit-store'
 import { KnowledgeStore } from './knowledge-store'
+import { IntentRoutingStore } from './intent-routing-store'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
 const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260428'
@@ -133,6 +134,7 @@ let runtimeDevice: DesktopDevice | null = null
 let settingsWindow: BrowserWindow | null = null
 const auditStore = new AuditStore()
 const knowledgeStore = new KnowledgeStore()
+const intentRoutingStore = new IntentRoutingStore()
 
 function createWindow(): void {
   // Create the browser window.
@@ -589,6 +591,32 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('knowledge:preview', async (_event, query: string) => {
     return knowledgeStore.preview(query || '')
+  })
+
+  ipcMain.handle('intentRouting:get', async () => {
+    return intentRoutingStore.get()
+  })
+
+  ipcMain.handle('intentRouting:save', async (_event, settings) => {
+    try {
+      return { success: true, settings: intentRoutingStore.save(settings) }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { success: false, error: message }
+    }
+  })
+
+  ipcMain.handle('intentRouting:resetDefaults', async () => {
+    return { success: true, settings: intentRoutingStore.resetDefaults() }
+  })
+
+  ipcMain.handle('intentRouting:preview', async (_event, args) => {
+    try {
+      return { success: true, result: intentRoutingStore.preview(args.context, args.settings) }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { success: false, error: message }
+    }
   })
 
   ipcMain.handle('review:listDrafts', async () => {
