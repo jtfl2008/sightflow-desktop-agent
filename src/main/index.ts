@@ -1019,8 +1019,9 @@ function withSchemaDefaults(
 function mapLogToAuditCategory(
   type: 'thinking' | 'reply' | 'skip' | 'error',
   content: string
-): 'engine' | 'layout' | 'provider' | 'draft' | 'message' | 'error' {
+): 'engine' | 'layout' | 'provider' | 'draft' | 'policy' | 'message' | 'error' {
   if (type === 'error') return 'error'
+  if (content.includes('安全策略')) return 'policy'
   if (content.includes('草稿')) return 'draft'
   if (
     content.includes('布局') ||

@@ -5,6 +5,7 @@ import { RuntimeHost } from './runtime-host'
 import { ProviderAdapter, ProviderEvent, ProviderInput } from './session-types'
 import { AppType } from './rpa/types'
 import { BBox } from './rpa/vision-utils'
+import { PolicyEngine } from './policy-engine'
 
 class DraftReviewMockDevice implements DesktopDevice {
   sentMessages: string[] = []
@@ -197,12 +198,34 @@ async function testStoppedSessionDropsLateProviderReply(): Promise<void> {
   assert.equal(state.replyDrafts.length, 0)
 }
 
+async function testPolicyHitForcesReviewWithoutAutoSend(): Promise<void> {
+  const device = new DraftReviewMockDevice()
+  const state = createInitialGenericChannelState()
+  const runtime = new RuntimeHost({
+    appType: 'wechat',
+    channel: new GenericChannelSession(device, {
+      policyEngine: new PolicyEngine({ reviewKeywords: ['review'] })
+    }),
+    provider: new StaticReplyProvider('needs review'),
+    initialState: state
+  })
+
+  await runtime.startSession()
+  await waitFor(() => state.replyDrafts.length === 1, 'policy-forced draft creation')
+
+  assert.equal(device.sentMessages.length, 0)
+  assert.deepEqual(device.draftMessages, ['needs review'])
+  assert.deepEqual(state.replyDrafts[0].riskLabels, ['敏感关键词'])
+  await runtime.stopSession('test_done')
+}
+
 async function main(): Promise<void> {
   await testDraftDoesNotAutoSend()
   await testApproveSendsDraft()
   await testSkipContinuesWithoutSend()
   await testTakeoverStopsCurrentSession()
   await testStoppedSessionDropsLateProviderReply()
+  await testPolicyHitForcesReviewWithoutAutoSend()
   console.log('runtime draft review mock tests passed')
 }
 

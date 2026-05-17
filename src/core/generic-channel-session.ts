@@ -14,6 +14,7 @@ import {
   ReplyReviewMode,
   SessionEvent
 } from './session-types'
+import { allowAllPolicyDecision, PolicyDecision, PolicyEngine } from './policy-engine'
 
 export interface GenericChannelState {
   measuredAt: number | null
@@ -21,6 +22,7 @@ export interface GenericChannelState {
   replyDrafts: ReplyDraft[]
   activeDraftId: string | null
   lastProviderScreenshot: string | null
+  consecutiveAutoSends: number
 }
 
 export function createInitialGenericChannelState(): GenericChannelState {
@@ -29,12 +31,14 @@ export function createInitialGenericChannelState(): GenericChannelState {
     latestChatBaseline: null,
     replyDrafts: [],
     activeDraftId: null,
-    lastProviderScreenshot: null
+    lastProviderScreenshot: null,
+    consecutiveAutoSends: 0
   }
 }
 
 interface GenericChannelSessionOptions {
   replyMode?: ReplyReviewMode
+  policyEngine?: PolicyEngine
 }
 
 export class GenericChannelSession implements ChannelSession<GenericChannelState> {
@@ -102,6 +106,7 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
         ctx.host.log('skip', '本轮无需回复')
         await this.device.setChatBaseline()
         ctx.state.latestChatBaseline = Date.now()
+        ctx.state.consecutiveAutoSends = 0
         ctx.host.enqueue({ type: 'check_unread' })
         break
 
@@ -224,8 +229,19 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
     content: string,
     ctx: ChannelContext<GenericChannelState>
   ): Promise<void> {
-    if (this.getReplyMode() === 'auto_send') {
+    const policyDecision = this.evaluatePolicy(content, ctx)
+    if (policyDecision.action === 'blocked') {
+      ctx.host.log('error', `安全策略阻断自动发送：${policyDecision.reasons.join('；')}`)
+      ctx.state.consecutiveAutoSends = 0
+      await this.device.setChatBaseline()
+      ctx.state.latestChatBaseline = Date.now()
+      ctx.host.enqueue({ type: 'check_unread' })
+      return
+    }
+
+    if (this.getReplyMode() === 'auto_send' && policyDecision.action === 'allow') {
       await this.sendReplyAndContinue(content, ctx)
+      ctx.state.consecutiveAutoSends += 1
       return
     }
 
@@ -240,9 +256,12 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
       return
     }
 
-    const draft = this.createReplyDraft(content, ctx)
+    const draft = this.createReplyDraft(content, ctx, policyDecision)
     ctx.state.replyDrafts.push(draft)
     ctx.state.activeDraftId = draft.id
+    if (policyDecision.action === 'requires_review') {
+      ctx.host.log('thinking', `安全策略要求人工审核：${policyDecision.reasons.join('；')}`)
+    }
     ctx.host.log('thinking', `已生成待确认回复草稿: ${draft.id}`)
   }
 
@@ -265,6 +284,7 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
 
     if (status === 'approved') {
       await this.sendReplyAndContinue(draft.content, ctx)
+      ctx.state.consecutiveAutoSends = 0
       return
     }
 
@@ -272,6 +292,7 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
       ctx.host.log('skip', '已跳过回复草稿')
       await this.device.setChatBaseline()
       ctx.state.latestChatBaseline = Date.now()
+      ctx.state.consecutiveAutoSends = 0
       ctx.host.enqueue({ type: 'check_unread' })
       return
     }
@@ -291,7 +312,11 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
     ctx.host.enqueue({ type: 'check_unread' })
   }
 
-  private createReplyDraft(content: string, ctx: ChannelContext<GenericChannelState>): ReplyDraft {
+  private createReplyDraft(
+    content: string,
+    ctx: ChannelContext<GenericChannelState>,
+    policyDecision: PolicyDecision
+  ): ReplyDraft {
     this.draftSequence += 1
     return {
       id: `draft-${Date.now()}-${this.draftSequence}`,
@@ -299,6 +324,8 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
       appType: ctx.appType,
       screenshot: ctx.state.lastProviderScreenshot || '',
       status: 'pending',
+      riskLabels: policyDecision.riskLabels,
+      policyReasons: policyDecision.reasons,
       createdAt: Date.now()
     }
   }
@@ -307,12 +334,25 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
     return this.options.replyMode || 'auto_send'
   }
 
+  private evaluatePolicy(
+    content: string,
+    ctx: ChannelContext<GenericChannelState>
+  ): PolicyDecision {
+    return (
+      this.options.policyEngine?.evaluate({
+        replyText: content,
+        consecutiveAutoSends: ctx.state.consecutiveAutoSends
+      }) || allowAllPolicyDecision
+    )
+  }
+
   private resetState(state: GenericChannelState, clearDrafts: boolean): void {
     state.measuredAt = null
     state.latestChatBaseline = null
     if (clearDrafts) state.replyDrafts = []
     state.activeDraftId = null
     state.lastProviderScreenshot = null
+    state.consecutiveAutoSends = 0
   }
 
   private async tryOpenUnreadConversation(

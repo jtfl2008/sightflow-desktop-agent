@@ -23,6 +23,8 @@ export interface ReplyDraft {
   appType: AppType
   screenshot: string
   status: ReplyDraftStatus
+  riskLabels?: string[]
+  policyReasons?: string[]
   createdAt: number
   resolvedAt?: number
 }
