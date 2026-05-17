@@ -43,6 +43,8 @@ import { VisionReplayStore } from './vision-replay-store'
 import { registerVisionReplayIpc } from './vision-replay-ipc'
 import { manifestFromPreset, validateChannelAdapterManifest } from '../core/channel-adapter/manifest-validator'
 import { createChannelAdapterRuntimeState } from '../core/channel-adapter/runtime-state'
+import { buildProviderChannelContextFromAdapter } from '../core/channel-adapter/provider-channel-context'
+import { validateRendererChannelAdapterSave } from '../core/channel-adapter/renderer-save-guard'
 import type { ProviderInput, ProviderInputChannelContext } from '../core/session-types'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
@@ -845,7 +847,21 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('channelAdapter:save', async (_event, settings) => {
     try {
-      const saved = channelAdapterStore.save(settings)
+      const validation = validateRendererChannelAdapterSave(
+        settings,
+        channelAdapterStore.listPresets()
+      )
+      if (!validation.ok || !validation.settings) {
+        auditStore.record({
+          category: 'layout',
+          action: 'layout.invalid_adapter_fallback',
+          severity: 'warn',
+          message: validation.error,
+          metadata: { errorCode: validation.errorCode }
+        })
+        return { success: false, error: validation.error, errorCode: validation.errorCode }
+      }
+      const saved = channelAdapterStore.save(validation.settings)
       const action = saved.multiSessionEnabled
         ? !saved.headerConfigured
           ? 'layout.missing_header_draft_review'
@@ -1366,36 +1382,13 @@ function buildProviderChannelContext(
 ): ProviderInputChannelContext {
   const adapterSettings = channelAdapterStore.get(input.appType)
   const regions = settings.capture[input.appType]?.regions || null
-  const multiSessionEnabled = adapterSettings.multiSessionEnabled
-  const headerConfigured = adapterSettings.headerConfigured && Boolean(regions?.header)
-  const unreadIndicatorConfigured =
-    adapterSettings.unreadIndicatorConfigured && Boolean(regions?.unreadIndicator)
-  const hasContactKey = Boolean(input.currentContact?.trim())
-  const currentContactVerified = multiSessionEnabled
-    ? headerConfigured && hasContactKey
-    : hasContactKey
-  const contactKeyHash = currentContactVerified
-    ? customerMemoryStore.hashContactKey(input.appType, input.currentContact || '')
-    : undefined
-  const reasons: string[] = []
-  if (multiSessionEnabled && !headerConfigured) reasons.push('missing_header')
-  if (multiSessionEnabled && !currentContactVerified) reasons.push('contact_not_verified')
-  if (multiSessionEnabled && !unreadIndicatorConfigured) reasons.push('missing_unread_indicator')
-
-  return {
-    multiSessionEnabled,
-    headerConfigured,
-    unreadIndicatorConfigured,
-    currentContactVerified,
-    contactKeyHash,
-    customerMemoryOmittedReason: resolveChannelMemoryOmittedReason({
-      multiSessionEnabled,
-      headerConfigured,
-      currentContactVerified
-    }),
-    finalAction: reasons.includes('missing_header') ? 'draft_review' : 'allow_send',
-    reasons
-  }
+  return buildProviderChannelContextFromAdapter({
+    appType: input.appType,
+    currentContact: input.currentContact,
+    adapterSettings,
+    regions,
+    hashContactKey: (appType, contactKey) => customerMemoryStore.hashContactKey(appType, contactKey)
+  })
 }
 
 function buildCustomerMemoryForProvider(
@@ -1411,16 +1404,6 @@ function buildCustomerMemoryForProvider(
       result.omittedReason as ProviderInputChannelContext['customerMemoryOmittedReason']
   }
   return result
-}
-
-function resolveChannelMemoryOmittedReason(input: {
-  multiSessionEnabled: boolean
-  headerConfigured: boolean
-  currentContactVerified: boolean
-}): ProviderInputChannelContext['customerMemoryOmittedReason'] {
-  if (input.multiSessionEnabled && !input.headerConfigured) return 'missing_header'
-  if (input.multiSessionEnabled && !input.currentContactVerified) return 'contact_not_verified'
-  return undefined
 }
 
 /**
