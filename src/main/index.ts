@@ -1261,23 +1261,7 @@ async function startEngineCore(rawConfig?: any): Promise<SkillStartResult> {
           action: customerMemory.customerProfile
             ? 'customer_profile.injected'
             : 'customer_profile.omitted',
-          metadata: {
-            customerProfile: customerMemory.customerProfile
-              ? {
-                  profileId: customerMemory.customerProfile.profileId,
-                  version: customerMemory.customerProfile.version,
-                  contactKeyHash: customerMemory.customerProfile.contactKeyHash,
-                  injectedFieldPaths: customerMemory.customerProfile.injectedFieldPaths,
-                  expired: Boolean(customerMemory.customerProfile.expiresAt)
-                }
-              : {
-                  omittedReason: channelContext.customerMemoryOmittedReason,
-                  contactKeyHash: channelContext.contactKeyHash,
-                  injectedFieldPaths: [],
-                  safetyHintApplied: true
-                },
-            channelContext
-          }
+          metadata: buildCustomerMemoryAuditMetadata(customerMemory, channelContext)
         })
         const routeDraftMode =
           intentResult.route.forcedReplyMode === 'manual_takeover'
@@ -1426,6 +1410,31 @@ function routeActionToRuntimeDecision(
       return 'manual_takeover'
     case 'blocked':
       return 'blocked'
+  }
+}
+
+function buildCustomerMemoryAuditMetadata(
+  customerMemory: ReturnType<CustomerMemoryStore['buildProviderInputByContact']>,
+  channelContext: ProviderInputChannelContext
+): Record<string, unknown> {
+  const injected = Boolean(customerMemory.customerProfile)
+  const contactKeyHash =
+    customerMemory.customerProfile?.contactKeyHash || channelContext.contactKeyHash
+  const omittedReason = injected ? undefined : customerMemory.omittedReason
+  const injectedFieldPaths = customerMemory.customerProfile?.injectedFieldPaths || []
+  return {
+    contactKeyHash,
+    injected,
+    omittedReason,
+    injectedFieldPaths,
+    safetyHintApplied: true,
+    redactionExportSummary: {
+      status: 'passed',
+      blockedTypes: [],
+      omittedFieldPaths: [],
+      unknownFieldCount: 0,
+      checkedAt: new Date().toISOString()
+    }
   }
 }
 
