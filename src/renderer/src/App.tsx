@@ -10,7 +10,7 @@ interface LogEntry {
 }
 
 type EngineStatus = 'idle' | 'running' | 'error'
-type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge' | 'intent' | 'channel' | 'memory' | 'debug'
+type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge' | 'intent' | 'channel' | 'memory' | 'debug' | 'providerSecurity'
 type AppType = 'wechat' | 'wework' | 'dingtalk' | 'lark' | 'slack' | 'telegram' | 'generic'
 
 type CaptureStrategy = 'auto' | 'vlm' | 'box-select'
@@ -717,6 +717,12 @@ function SettingsWindow(): React.JSX.Element {
         >
           调试台
         </button>
+        <button
+          className={`settings-nav-item ${section === 'providerSecurity' ? 'active' : ''}`}
+          onClick={() => setSection('providerSecurity')}
+        >
+          Provider 安全
+        </button>
       </aside>
 
       <main className="settings-main">
@@ -734,8 +740,10 @@ function SettingsWindow(): React.JSX.Element {
           <ChannelAdapterSettingsPage />
         ) : section === 'memory' ? (
           <CustomerMemoryPage />
-        ) : (
+        ) : section === 'debug' ? (
           <ProviderDebugConsolePage />
+        ) : (
+          <ProviderProductionInstallPage />
         )}
       </main>
     </div>
