@@ -66,6 +66,14 @@ export interface CustomerProfileRecord {
   provenance: CustomerProfileProvenance[]
 }
 
+export interface CustomerProfileTombstone {
+  profileId: string
+  contactKeyHash: string
+  deletedAt: string
+  deletedBy: 'local_user'
+  reason: 'user_deleted' | 'retention_expired' | 'clear_all'
+}
+
 export interface CustomerMemorySuggestion {
   suggestionId: string
   contactKeyHash: string
@@ -76,6 +84,14 @@ export interface CustomerMemorySuggestion {
   sourceAuditId?: string
   status: 'pending' | 'confirmed' | 'dismissed' | 'expired'
   sanitizerWarnings: string[]
+}
+
+export interface CustomerMemoryStoreShape {
+  settings: CustomerMemorySettings
+  profilesById: Record<string, CustomerProfileRecord>
+  profileIdsByContactKeyHash: Record<string, string>
+  tombstonesByContactKeyHash: Record<string, CustomerProfileTombstone>
+  pendingSuggestionsById: Record<string, CustomerMemorySuggestion>
 }
 
 export interface ProviderInputCustomerProfile {

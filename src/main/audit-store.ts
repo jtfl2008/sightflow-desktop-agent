@@ -17,7 +17,7 @@ interface AuditStoreOptions {
 const DEFAULT_MAX_RECORDS = 500
 const REDACTED = '[REDACTED]'
 const SENSITIVE_KEY_PATTERN =
-  /(api[-_]?key|authorization|bearer|token|secret|password|provider[-_]?key|clipboard|clipboard[-_]?history|clipboard[-_]?text|screenshot|image|base64)/i
+  /(api[-_]?key|authorization|bearer|token|secret|password|provider[-_]?key|clipboard|clipboard[-_]?history|clipboard[-_]?text|screenshot|image|base64|pendingSuggestion|contactKey$|displayName)/i
 
 export class AuditStore {
   private readonly maxRecords: number
@@ -107,7 +107,12 @@ function sanitizeValue(value: unknown, depth: number): unknown {
   if (!isPlainRecord(value)) return String(value)
 
   return Object.entries(value).reduce<Record<string, unknown>>((acc, [key, item]) => {
-    acc[key] = SENSITIVE_KEY_PATTERN.test(key) ? REDACTED : sanitizeValue(item, depth + 1)
+    acc[key] =
+      key === 'customerProfile' && isPlainRecord(item)
+        ? sanitizeCustomerProfileAuditValue(item, depth + 1)
+        : SENSITIVE_KEY_PATTERN.test(key)
+          ? REDACTED
+          : sanitizeValue(item, depth + 1)
     return acc
   }, {})
 }
@@ -119,6 +124,37 @@ function sanitizeString(value: string): string {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function sanitizeCustomerProfileAuditValue(
+  value: Record<string, unknown>,
+  depth: number
+): Record<string, unknown> {
+  const allowedKeys = [
+    'profileId',
+    'version',
+    'contactKeyHash',
+    'injectedFieldPaths',
+    'expired',
+    'omittedReason',
+    'safetyHintApplied'
+  ]
+  const out: Record<string, unknown> = {}
+  for (const key of allowedKeys) {
+    if (value[key] !== undefined) out[key] = sanitizeValue(value[key], depth + 1)
+  }
+  if (Array.isArray(value.sourceSummary)) {
+    out.sourceSummary = value.sourceSummary.map((item) => {
+      if (!isPlainRecord(item)) return {}
+      return {
+        fieldPath: sanitizeValue(item.fieldPath, depth + 1),
+        source: sanitizeValue(item.source, depth + 1),
+        confirmedByUser: item.confirmedByUser === true,
+        auditId: sanitizeValue(item.auditId, depth + 1)
+      }
+    })
+  }
+  return out
 }
 
 function createElectronStoreBackend(): AuditStoreBackend {
