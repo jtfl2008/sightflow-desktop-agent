@@ -1,10 +1,12 @@
 import { AppType } from './rpa/types'
+import type { IntentContext, RouteDecision } from './intent-types'
 
 export interface ProviderInput {
   screenshot: string
   appType: AppType
   currentContact?: string
   ocrText?: string
+  draftMode?: ReplyReviewMode | 'manual_takeover'
   knowledgeSnippets?: Array<{
     id: string
     title: string
@@ -12,7 +14,15 @@ export interface ProviderInput {
     sourceType: string
     score?: number
   }>
-  policyHints?: string[]
+  policyHints?: Array<{
+    id: string
+    label: string
+    severity: 'info' | 'requires_review' | 'blocked'
+    reason: string
+    source: 'policy' | 'intent_route' | 'knowledge'
+  }>
+  intent?: IntentContext
+  route?: RouteDecision
 }
 
 export type ProviderEvent =

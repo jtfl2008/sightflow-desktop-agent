@@ -4,6 +4,7 @@ export type AuditCategory =
   | 'provider'
   | 'draft'
   | 'policy'
+  | 'intent'
   | 'message'
   | 'error'
 
