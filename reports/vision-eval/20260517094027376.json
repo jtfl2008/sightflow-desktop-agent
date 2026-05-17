@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-17T09:40:27.376Z",
+  "suiteIds": [
+    "synthetic-basic"
+  ],
+  "summary": {
+    "totalSamples": 1,
+    "totalTasks": 5,
+    "passedTasks": 5,
+    "failedTasks": 0,
+    "passRate": 1,
+    "privacyViolations": 0
+  },
+  "metrics": {
+    "bbox": {
+      "meanIoU": 1,
+      "meanCenterDistancePx": 0
+    },
+    "point": {
+      "meanDistancePx": 0
+    },
+    "unread": {
+      "accuracy": 1
+    },
+    "diff": {
+      "accuracy": 1
+    },
+    "boxSelect": {
+      "passRate": 1
+    }
+  },
+  "failures": []
+}
