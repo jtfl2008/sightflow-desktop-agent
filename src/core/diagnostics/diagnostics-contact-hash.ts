@@ -63,7 +63,7 @@ export function validateDiagnosticsQuery(input: DiagnosticsQuery): DiagnosticsQu
       ...input,
       runId: input.runId?.trim(),
       draftId: input.draftId?.trim(),
-      contactHash: input.contactHash?.trim(),
+      contactHash: undefined,
       limit: clampInteger(input.limit, 1, 200, 50),
       offset: clampInteger(input.offset, 0, 10000, 0)
     }
