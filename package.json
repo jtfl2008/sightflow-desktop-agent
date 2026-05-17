@@ -17,6 +17,7 @@
     "dev:test-reply": "electron-vite build && cross-env TEST_MODE=reply electron ./out/main/test-cli.js",
     "dev:test-switch": "electron-vite build && cross-env TEST_MODE=switch electron ./out/main/test-cli.js",
     "test:vision-eval": "ts-node scripts/vision-eval.ts --suite fixtures/vision-replay/suites/synthetic-basic --report-dir reports/vision-eval",
+    "provider-verify": "ts-node src/main/provider-security/provider-verify.ts",
     "build": "npm run typecheck && electron-vite build",
     "postinstall": "patch-package && electron-builder install-app-deps",
     "build:unpack": "npm run build && electron-builder --dir",

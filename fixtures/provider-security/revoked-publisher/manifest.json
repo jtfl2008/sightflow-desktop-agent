@@ -1,0 +1,28 @@
+{
+  "apiVersion": 1,
+  "id": "revoked-publisher-provider",
+  "name": "Revoked Publisher Fixture Provider",
+  "version": "1.0.0",
+  "entry": "provider.bundle.js",
+  "moduleType": "module",
+  "capabilities": ["chat"],
+  "configSchema": { "type": "object", "properties": {} },
+  "security": {
+    "manifestVersion": "1.2",
+    "publisherId": "revoked-fixture",
+    "keyId": "revoked-k1",
+    "signatureAlgorithm": "ed25519",
+    "signature": "blVUcg0SI64vVTweP/f8y2qo78rC+G1GAShU2XhLfGUxb1aQPNFaZktZulBLLaGT4lmGGt2ezy0qFgrya5HzCA==",
+    "signedAt": "2026-05-17T00:00:00.000Z",
+    "canonicalization": "jcs-v1"
+  },
+  "artifacts": [
+    {
+      "path": "provider.bundle.js",
+      "sha256": "a2b2c26572af999943f567788ec3215f0ea3cbac5fed46cbca4084d5c5f4f3fe",
+      "sizeBytes": 106,
+      "contentType": "application/javascript"
+    }
+  ],
+  "permissions": [{ "name": "debug_log", "reason": "fixture diagnostics only" }]
+}

@@ -1,0 +1,19 @@
+[
+  {
+    "publisherId": "official-fixture",
+    "displayName": "Official Fixture Publisher",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAWovMnWFBLJ9Z8hUs8IrrMshN+lAU/pjv4ytM24FUWMc=\n-----END PUBLIC KEY-----\n",
+    "keyId": "fixture-k1",
+    "trustSource": "builtin",
+    "trustedAt": "2026-05-17T00:00:00.000Z"
+  },
+  {
+    "publisherId": "revoked-fixture",
+    "displayName": "Revoked Fixture Publisher",
+    "publicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAWovMnWFBLJ9Z8hUs8IrrMshN+lAU/pjv4ytM24FUWMc=\n-----END PUBLIC KEY-----\n",
+    "keyId": "revoked-k1",
+    "trustSource": "builtin",
+    "trustedAt": "2026-05-17T00:00:00.000Z",
+    "revokedAt": "2026-05-17T00:00:01.000Z"
+  }
+]

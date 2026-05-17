@@ -1,0 +1,87 @@
+{
+  "schema": "sightflow.provider-security-fixtures",
+  "version": 1,
+  "generatedAt": "2026-05-17T00:00:00.000Z",
+  "fixtures": [
+    {
+      "name": "trusted",
+      "manifest": "trusted/manifest.json",
+      "bundle": "trusted/provider.bundle.js",
+      "sourceUrl": "https://fixtures.local/trusted/manifest.json",
+      "expectedStatus": "PASS",
+      "expectedReasonCodes": []
+    },
+    {
+      "name": "debug_only",
+      "manifest": "debug_only/manifest.json",
+      "bundle": "debug_only/provider.bundle.js",
+      "sourceUrl": "file:///fixtures/provider-security/debug_only/manifest.json",
+      "expectedStatus": "FAIL",
+      "expectedReasonCodes": ["provider.security.missing_signature"]
+    },
+    {
+      "name": "unsigned",
+      "manifest": "unsigned/manifest.json",
+      "bundle": "unsigned/provider.bundle.js",
+      "sourceUrl": "https://fixtures.local/unsigned/manifest.json",
+      "expectedStatus": "FAIL",
+      "expectedReasonCodes": ["provider.security.missing_signature"]
+    },
+    {
+      "name": "tampered",
+      "manifest": "tampered/manifest.json",
+      "bundle": "tampered/provider.bundle.js",
+      "sourceUrl": "https://fixtures.local/tampered/manifest.json",
+      "expectedStatus": "FAIL",
+      "expectedReasonCodes": ["provider.security.signature_invalid"]
+    },
+    {
+      "name": "sha256-mismatch",
+      "manifest": "sha256-mismatch/manifest.json",
+      "bundle": "sha256-mismatch/provider.bundle.js",
+      "sourceUrl": "https://fixtures.local/sha256-mismatch/manifest.json",
+      "expectedStatus": "FAIL",
+      "expectedReasonCodes": ["provider.security.artifact_hash_mismatch"]
+    },
+    {
+      "name": "signature-invalid",
+      "manifest": "signature-invalid/manifest.json",
+      "bundle": "signature-invalid/provider.bundle.js",
+      "sourceUrl": "https://fixtures.local/signature-invalid/manifest.json",
+      "expectedStatus": "FAIL",
+      "expectedReasonCodes": ["provider.security.signature_invalid"]
+    },
+    {
+      "name": "permission-diff",
+      "manifest": "permission-diff/manifest.json",
+      "bundle": "permission-diff/provider.bundle.js",
+      "sourceUrl": "https://fixtures.local/permission-diff/manifest.json",
+      "expectedStatus": "FAIL",
+      "expectedReasonCodes": ["provider.security.permission_denied"]
+    },
+    {
+      "name": "insecure-transport",
+      "manifest": "insecure-transport/manifest.json",
+      "bundle": "insecure-transport/provider.bundle.js",
+      "sourceUrl": "http://fixtures.local/insecure-transport/manifest.json",
+      "expectedStatus": "FAIL",
+      "expectedReasonCodes": ["provider.security.insecure_transport"]
+    },
+    {
+      "name": "revoked-publisher",
+      "manifest": "revoked-publisher/manifest.json",
+      "bundle": "revoked-publisher/provider.bundle.js",
+      "sourceUrl": "https://fixtures.local/revoked-publisher/manifest.json",
+      "expectedStatus": "FAIL",
+      "expectedReasonCodes": ["provider.security.revoked_publisher"]
+    },
+    {
+      "name": "unknown-publisher",
+      "manifest": "unknown-publisher/manifest.json",
+      "bundle": "unknown-publisher/provider.bundle.js",
+      "sourceUrl": "https://fixtures.local/unknown-publisher/manifest.json",
+      "expectedStatus": "FAIL",
+      "expectedReasonCodes": ["provider.security.unknown_publisher"]
+    }
+  ]
+}

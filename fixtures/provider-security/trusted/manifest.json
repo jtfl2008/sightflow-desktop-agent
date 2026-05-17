@@ -1,0 +1,28 @@
+{
+  "apiVersion": 1,
+  "id": "trusted-provider",
+  "name": "Trusted Fixture Provider",
+  "version": "1.0.0",
+  "entry": "provider.bundle.js",
+  "moduleType": "module",
+  "capabilities": ["chat"],
+  "configSchema": { "type": "object", "properties": {} },
+  "security": {
+    "manifestVersion": "1.2",
+    "publisherId": "official-fixture",
+    "keyId": "fixture-k1",
+    "signatureAlgorithm": "ed25519",
+    "signature": "LGWWZfmItWsQQBKVDxk5P2udBTaS4GYJ30prwrxmP2hFfshSrKG+SeBW+qzq6bNdmUxRprfqtHAbamHLRPsRCQ==",
+    "signedAt": "2026-05-17T00:00:00.000Z",
+    "canonicalization": "jcs-v1"
+  },
+  "artifacts": [
+    {
+      "path": "provider.bundle.js",
+      "sha256": "a2b2c26572af999943f567788ec3215f0ea3cbac5fed46cbca4084d5c5f4f3fe",
+      "sizeBytes": 106,
+      "contentType": "application/javascript"
+    }
+  ],
+  "permissions": [{ "name": "debug_log", "reason": "fixture diagnostics only" }]
+}

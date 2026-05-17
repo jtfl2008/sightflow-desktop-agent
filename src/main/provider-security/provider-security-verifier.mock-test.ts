@@ -1,8 +1,11 @@
 import * as assert from 'node:assert/strict'
 import { generateKeyPairSync, sign } from 'node:crypto'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
 import type { SecureProviderBundleManifest } from './provider-manifest-security'
 import { canonicalizeProviderManifestForSignature, sha256Hex } from './provider-manifest-security'
 import { verifyProviderArtifacts } from './provider-artifact-verifier'
+import { verifyProviderManifestFile } from './provider-verify'
 import { verifyProviderManifestSignature } from './provider-signature-verifier'
 import type { TrustedPublisherRecord } from './provider-security-types'
 
@@ -117,6 +120,40 @@ function testEntryPathBoundaries(): void {
   }
 }
 
+interface FixtureIndex {
+  trustedPublishers: TrustedPublisherRecord[]
+  fixtures: Array<{
+    name: string
+    manifest: string
+    sourceUrl: string
+    expectedStatus: 'PASS' | 'FAIL'
+    expectedReasonCodes: string[]
+  }>
+}
+
+function testProviderSecurityFixtures(): void {
+  const fixtureRoot = path.resolve(process.cwd(), 'fixtures/provider-security')
+  const indexPath = path.join(fixtureRoot, 'fixture-index.json')
+  const publishersPath = path.join(fixtureRoot, 'trusted-publishers.json')
+  const index = JSON.parse(fs.readFileSync(indexPath, 'utf8')) as FixtureIndex
+  assert.ok(index.fixtures.length >= 9)
+
+  for (const fixture of index.fixtures) {
+    const output = verifyProviderManifestFile({
+      manifestPath: path.join(fixtureRoot, fixture.manifest),
+      publishersPath,
+      sourceUrl: fixture.sourceUrl
+    })
+    assert.equal(output.status, fixture.expectedStatus, fixture.name)
+    for (const reasonCode of fixture.expectedReasonCodes) {
+      assert.ok(
+        output.reasonCodes.includes(reasonCode as any),
+        `${fixture.name} missing ${reasonCode}`
+      )
+    }
+  }
+}
+
 function main(): void {
   testMissingSignature()
   testTrustedPublisherValidSignature()
@@ -124,6 +161,7 @@ function main(): void {
   testArtifactDigestMismatch()
   testArtifactDigestPasses()
   testEntryPathBoundaries()
+  testProviderSecurityFixtures()
   console.log('provider security verifier mock tests passed')
 }
 

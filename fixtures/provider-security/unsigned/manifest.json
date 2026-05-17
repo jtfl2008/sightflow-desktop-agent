@@ -1,0 +1,19 @@
+{
+  "apiVersion": 1,
+  "id": "unsigned-provider",
+  "name": "Unsigned Fixture Provider",
+  "version": "1.0.0",
+  "entry": "provider.bundle.js",
+  "moduleType": "module",
+  "capabilities": ["chat"],
+  "configSchema": { "type": "object", "properties": {} },
+  "artifacts": [
+    {
+      "path": "provider.bundle.js",
+      "sha256": "a2b2c26572af999943f567788ec3215f0ea3cbac5fed46cbca4084d5c5f4f3fe",
+      "sizeBytes": 106,
+      "contentType": "application/javascript"
+    }
+  ],
+  "permissions": [{ "name": "debug_log", "reason": "fixture diagnostics only" }]
+}
