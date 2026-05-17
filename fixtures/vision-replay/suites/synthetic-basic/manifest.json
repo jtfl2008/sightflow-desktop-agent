@@ -1,0 +1,92 @@
+{
+  "schemaVersion": 1,
+  "suiteId": "synthetic-basic",
+  "title": "Synthetic Basic Vision Replay",
+  "appType": "wechat",
+  "captureStrategy": "rpa_vlm",
+  "source": "synthetic",
+  "privacy": {
+    "storesFullScreenshot": false,
+    "redactionStatus": "synthetic",
+    "containsPersonalData": false,
+    "consentRequired": false,
+    "retentionDays": 7
+  },
+  "defaults": {
+    "bboxMinIoU": 0.75,
+    "pointMaxDistancePx": 24
+  },
+  "samples": [
+    {
+      "id": "synthetic-layout-001",
+      "title": "Synthetic layout and event-free visual checks",
+      "appType": "wechat",
+      "locale": "zh-CN",
+      "platform": "any",
+      "scaleFactor": 1,
+      "windowBounds": { "x": 0, "y": 0, "width": 1000, "height": 800 },
+      "image": {
+        "sha256": "synthetic",
+        "width": 1000,
+        "height": 800,
+        "kind": "synthetic"
+      },
+      "tasks": [
+        {
+          "type": "layout_bbox",
+          "target": "chatMainArea",
+          "expectedBbox": [300, 120, 950, 820],
+          "tolerance": { "minIoU": 0.75, "maxCenterDistancePx": 24 },
+          "mockVlmOutput": "[300,120,950,820]"
+        },
+        {
+          "type": "point",
+          "target": "focusInput",
+          "expectedPoint": [650, 900],
+          "coordinateSpace": "normalized_1000",
+          "tolerance": { "maxDistancePx": 16 },
+          "mockVlmOutput": "[650,900]"
+        },
+        {
+          "type": "unread_red_dot",
+          "target": "firstContact",
+          "expectedUnread": true,
+          "thresholdPercent": 1,
+          "onlyFirstQuadrant": true,
+          "mockUnread": true
+        },
+        {
+          "type": "chat_main_diff",
+          "expectedHasDiff": true,
+          "threshold": 0.1,
+          "changeThreshold": 0.005,
+          "mockHasDiff": true
+        },
+        {
+          "type": "box_select_regions",
+          "regions": {
+            "contactList": { "x": 0, "y": 0, "width": 260, "height": 800 },
+            "chatMain": { "x": 260, "y": 80, "width": 740, "height": 600 },
+            "inputBox": { "x": 260, "y": 680, "width": 740, "height": 120 },
+            "unreadIndicator": null
+          },
+          "expectedValid": true,
+          "expectedMode": "single_session"
+        }
+      ],
+      "auditContext": {
+        "auditRecordIds": ["layout-1"],
+        "events": [
+          {
+            "category": "layout",
+            "action": "layout.vision_eval_started",
+            "occurredAt": "2026-05-17T08:00:00.000Z",
+            "metadata": { "sampleHash": "synthetic" }
+          }
+        ]
+      },
+      "tags": ["synthetic", "privacy-safe"],
+      "createdAt": "2026-05-17T08:00:00.000Z"
+    }
+  ]
+}
