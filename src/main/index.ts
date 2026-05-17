@@ -822,7 +822,10 @@ app.whenReady().then(async () => {
     const missingRequired = (['contactList', 'chatMain', 'inputBox'] as const).filter(
       (key) => !regions?.[key]
     )
-    const missingForAutoSend = regions?.header ? [] : (['header'] as const)
+    const missingForAutoSend = [
+      ...(regions?.header ? [] : ['header']),
+      ...(regions?.unreadIndicator ? [] : ['unreadIndicator'])
+    ]
     const warnings = [
       ...(validation.valid ? [] : [`invalid manifest: ${validation.errors.join('; ')}`]),
       ...(regions?.unreadIndicator ? [] : ['missing unreadIndicator: fallback chatMain_diff_only']),
