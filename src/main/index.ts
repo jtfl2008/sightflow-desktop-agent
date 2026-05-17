@@ -838,7 +838,54 @@ async function startEngineCore(rawConfig?: any): Promise<SkillStartResult> {
     log('thinking', `已选用抓取策略：${strategy}`)
     runtimeDevice = device
 
-    const channel = new GenericChannelSession(device)
+    const channel = new GenericChannelSession(device, {
+      providerInputEnricher: async (input) => {
+        const knowledge = knowledgeStore.preview(input.ocrText || '')
+        const intentResult = intentRoutingStore.preview({
+          appType: input.appType,
+          currentContact: input.currentContact,
+          ocrText: input.ocrText,
+          knowledgeSnippets: knowledge.hits,
+          replyMode: 'auto_send',
+          now: Date.now()
+        })
+        auditStore.record({
+          category: 'intent',
+          action: intentResult.intent.fallbackUsed ? 'intent.fallback' : 'intent.detected',
+          metadata: {
+            appType: input.appType,
+            primaryIntentId: intentResult.intent.primaryIntentId,
+            confidence: intentResult.intent.confidence,
+            routeId: intentResult.route.routeId,
+            routeAction: intentResult.route.action,
+            matchedRuleIds: intentResult.matchedRules.map((rule) => rule.id),
+            matchedKnowledge: intentResult.matchedKnowledge,
+            fallbackUsed: intentResult.intent.fallbackUsed,
+            fallbackReason: intentResult.intent.fallbackReason
+          }
+        })
+        auditStore.record({
+          category: 'intent',
+          action: 'route.selected',
+          metadata: {
+            routeId: intentResult.route.routeId,
+            routeAction: intentResult.route.action,
+            auditTags: intentResult.route.auditTags
+          }
+        })
+        return {
+          ...input,
+          knowledgeSnippets: knowledge.hits,
+          intent: intentResult.intent,
+          route: intentResult.route,
+          policyHints: intentResult.route.policyHints,
+          draftMode:
+            intentResult.route.forcedReplyMode === 'manual_takeover'
+              ? 'manual_takeover'
+              : intentResult.route.forcedReplyMode
+        }
+      }
+    })
     runtime = new RuntimeHost({
       appType,
       channel,

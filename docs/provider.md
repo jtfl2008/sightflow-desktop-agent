@@ -112,13 +112,35 @@ interface ProviderInput {
     sourceType: 'manual' | 'faq' | 'doc' | 'url' | string
     score?: number
   }>
-  policyHints?: string[]
+  policyHints?: Array<{
+    id: string
+    label: string
+    severity: 'info' | 'requires_review' | 'blocked'
+    reason: string
+    source: 'policy' | 'intent_route' | 'knowledge'
+  }>
+  intent?: {
+    primaryIntentId: string
+    confidence: number
+    fallbackUsed: boolean
+  }
+  route?: {
+    routeId: string
+    label: string
+    action:
+      | 'run_provider'
+      | 'run_provider_requires_review'
+      | 'skip_provider'
+      | 'manual_takeover'
+      | 'blocked'
+    promptHint?: string
+  }
 }
 ```
 
 其中 `screenshot` 是 `data:image/...;base64,...` 格式的截图字符串。Provider 如果调用 OpenAI 兼容视觉接口，通常可以直接把它作为 `image_url.url` 传入；如果目标 API 只接受裸 base64，需要自行去掉 `base64,` 前缀。
 
-`knowledgeSnippets` 是本地轻量知识库检索命中的启用条目片段；禁用条目不会进入 ProviderInput。宿主会限制片段数量，Provider 应把它们作为参考材料，而不是覆盖截图中的最新对话事实。`policyHints` 是策略层提示，Provider 应避免生成会触发阻断或强制审核的内容。
+`knowledgeSnippets` 是本地轻量知识库检索命中的启用条目片段；禁用条目不会进入 ProviderInput。宿主会限制片段数量，Provider 应把它们作为参考材料，而不是覆盖截图中的最新对话事实。`intent` / `route` 是宿主在调用 Provider 前做出的本地规则路由结果。旧 Provider 可以忽略这些 optional 字段；新 Provider 可使用 `route.promptHint` 调整回复风格。若宿主判定 `route.action` 为 `blocked`、`skip_provider` 或 `manual_takeover`，宿主会在进入 Provider 前处理，Provider 不应尝试绕过。`policyHints` 是策略层提示，Provider 应避免生成会触发阻断或强制审核的内容。
 
 Provider 可以返回的事件：
 

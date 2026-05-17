@@ -105,8 +105,18 @@ function buildUserPrompt(input) {
         .map((item, index) => `${index + 1}. ${item.title}（${item.sourceType}）：${item.content}`)
         .join('\n')}`
     : ''
-  const policyText = hints.length ? `\n\n安全策略提示：\n${hints.map((item) => `- ${item}`).join('\n')}` : ''
-  return `请根据截图中微信聊天窗口的最新消息进行回复。${knowledgeText}${policyText}`
+  const policyText = hints.length
+    ? `\n\n安全策略提示：\n${hints.map((item) => `- ${item.label || item.id}: ${item.reason || ''}`).join('\n')}`
+    : ''
+  const intentText = input.intent?.primaryIntentId
+    ? `\n\n意图识别：${input.intent.primaryIntentId}，置信度 ${input.intent.confidence}`
+    : ''
+  const routeText = input.route?.promptHint
+    ? `\n\n路由提示：${input.route.promptHint}`
+    : input.route?.label
+      ? `\n\n路由：${input.route.label}`
+      : ''
+  return `请根据截图中微信聊天窗口的最新消息进行回复。${intentText}${routeText}${knowledgeText}${policyText}`
 }
 
 function normalizeImageUrl(screenshot) {

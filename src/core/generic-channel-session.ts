@@ -10,6 +10,7 @@ import {
   ChannelContext,
   ChannelSession,
   ProviderEvent,
+  ProviderInput,
   ReplyDraft,
   ReplyReviewMode,
   SessionEvent
@@ -23,6 +24,7 @@ export interface GenericChannelState {
   activeDraftId: string | null
   lastProviderScreenshot: string | null
   consecutiveAutoSends: number
+  forcedReplyMode: ReplyReviewMode | null
 }
 
 export function createInitialGenericChannelState(): GenericChannelState {
@@ -32,13 +34,15 @@ export function createInitialGenericChannelState(): GenericChannelState {
     replyDrafts: [],
     activeDraftId: null,
     lastProviderScreenshot: null,
-    consecutiveAutoSends: 0
+    consecutiveAutoSends: 0,
+    forcedReplyMode: null
   }
 }
 
 interface GenericChannelSessionOptions {
   replyMode?: ReplyReviewMode
   policyEngine?: PolicyEngine
+  providerInputEnricher?: (input: ProviderInput) => Promise<ProviderInput> | ProviderInput
 }
 
 export class GenericChannelSession implements ChannelSession<GenericChannelState> {
@@ -193,10 +197,37 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
     ctx: ChannelContext<GenericChannelState>
   ): Promise<void> {
     try {
-      for await (const event of ctx.host.runProvider({
+      const providerInput = await this.prepareProviderInput({
         screenshot,
         appType: ctx.appType
-      })) {
+      }, ctx)
+
+      const route = providerInput.route
+      const action = route?.action
+      if (route && action === 'blocked') {
+        ctx.host.log('error', `意图路由阻断 Provider：${route.label}`)
+        await this.device.setChatBaseline()
+        ctx.state.latestChatBaseline = Date.now()
+        ctx.host.enqueue({ type: 'check_unread' })
+        return
+      }
+      if (route && action === 'skip_provider') {
+        ctx.host.log('skip', `意图路由跳过 Provider：${route.label}`)
+        await this.device.setChatBaseline()
+        ctx.state.latestChatBaseline = Date.now()
+        ctx.host.enqueue({ type: 'check_unread' })
+        return
+      }
+      if (route && action === 'manual_takeover') {
+        ctx.host.log('skip', `意图路由要求人工接管：${route.label}`)
+        await ctx.host.stopSession('intent_manual_takeover')
+        return
+      }
+      if (action === 'run_provider_requires_review') {
+        ctx.state.forcedReplyMode = 'draft_review'
+      }
+
+      for await (const event of ctx.host.runProvider(providerInput)) {
         if (!ctx.host.isRunning()) break
 
         const sessionEvent = this.mapProviderEvent(event)
@@ -239,9 +270,10 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
       return
     }
 
-    if (this.getReplyMode() === 'auto_send' && policyDecision.action === 'allow') {
+    if (this.getReplyMode(ctx) === 'auto_send' && policyDecision.action === 'allow') {
       await this.sendReplyAndContinue(content, ctx)
       ctx.state.consecutiveAutoSends += 1
+      ctx.state.forcedReplyMode = null
       return
     }
 
@@ -334,8 +366,21 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
     }
   }
 
-  private getReplyMode(): ReplyReviewMode {
-    return this.options.replyMode || 'auto_send'
+  private async prepareProviderInput(
+    input: ProviderInput,
+    ctx: ChannelContext<GenericChannelState>
+  ): Promise<ProviderInput> {
+    const enriched = this.options.providerInputEnricher
+      ? await this.options.providerInputEnricher(input)
+      : input
+    return {
+      ...enriched,
+      draftMode: ctx.state.forcedReplyMode || enriched.draftMode
+    }
+  }
+
+  private getReplyMode(ctx: ChannelContext<GenericChannelState>): ReplyReviewMode {
+    return ctx.state.forcedReplyMode || this.options.replyMode || 'auto_send'
   }
 
   private evaluatePolicy(
@@ -357,6 +402,7 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
     state.activeDraftId = null
     state.lastProviderScreenshot = null
     state.consecutiveAutoSends = 0
+    state.forcedReplyMode = null
   }
 
   private async tryOpenUnreadConversation(
