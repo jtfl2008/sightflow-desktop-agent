@@ -8,6 +8,7 @@ import { AIClient } from '../core/ai-client'
 import { DesktopDevice } from '../core/device'
 import { RPADevice } from '../core/rpa-device'
 import { BoxSelectDevice } from '../core/box-select-device'
+import { AdapterBoxSelectDevice } from '../core/adapter-box-select-device'
 import { RuntimeHost } from '../core/runtime-host'
 import {
   createInitialGenericChannelState,
@@ -42,6 +43,7 @@ import { VisionReplayStore } from './vision-replay-store'
 import { registerVisionReplayIpc } from './vision-replay-ipc'
 import { manifestFromPreset, validateChannelAdapterManifest } from '../core/channel-adapter/manifest-validator'
 import { createChannelAdapterRuntimeState } from '../core/channel-adapter/runtime-state'
+import type { ProviderInput, ProviderInputChannelContext } from '../core/session-types'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
 const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260428'
@@ -1227,16 +1229,53 @@ async function startEngineCore(rawConfig?: any): Promise<SkillStartResult> {
             auditTags: intentResult.route.auditTags
           }
         })
+        const channelContext = buildProviderChannelContext(input, settings)
+        const customerMemory = buildCustomerMemoryForProvider(input, channelContext)
+        auditStore.record({
+          category: 'provider',
+          action: channelContext.finalAction === 'allow_send'
+            ? 'channel_context.allow_send'
+            : 'channel_context.draft_review_forced',
+          metadata: { channelContext }
+        })
+        auditStore.record({
+          category: 'provider',
+          action: customerMemory.customerProfile
+            ? 'customer_profile.injected'
+            : 'customer_profile.omitted',
+          metadata: {
+            customerProfile: customerMemory.customerProfile
+              ? {
+                  profileId: customerMemory.customerProfile.profileId,
+                  version: customerMemory.customerProfile.version,
+                  contactKeyHash: customerMemory.customerProfile.contactKeyHash,
+                  injectedFieldPaths: customerMemory.customerProfile.injectedFieldPaths,
+                  expired: Boolean(customerMemory.customerProfile.expiresAt)
+                }
+              : {
+                  omittedReason: channelContext.customerMemoryOmittedReason,
+                  contactKeyHash: channelContext.contactKeyHash,
+                  injectedFieldPaths: [],
+                  safetyHintApplied: true
+                },
+            channelContext
+          }
+        })
+        const routeDraftMode =
+          intentResult.route.forcedReplyMode === 'manual_takeover'
+            ? 'manual_takeover'
+            : intentResult.route.forcedReplyMode
+        const channelDraftMode =
+          channelContext.finalAction === 'draft_review' ? 'draft_review' : undefined
         return {
           ...input,
           knowledgeSnippets: knowledge.hits,
           intent: intentResult.intent,
           route: intentResult.route,
           policyHints: intentResult.route.policyHints,
-          draftMode:
-            intentResult.route.forcedReplyMode === 'manual_takeover'
-              ? 'manual_takeover'
-              : intentResult.route.forcedReplyMode
+          customerProfile: customerMemory.customerProfile,
+          channelContext,
+          draftMode: routeDraftMode || channelDraftMode
         }
       }
     })
@@ -1321,6 +1360,68 @@ function resolveSettingsStrategy(appType: AppType, settings: AppSettings): Captu
   return resolveEffectiveStrategy(appType, perApp.strategy, settings.defaultCaptureStrategy)
 }
 
+function buildProviderChannelContext(
+  input: ProviderInput,
+  settings: AppSettings
+): ProviderInputChannelContext {
+  const adapterSettings = channelAdapterStore.get(input.appType)
+  const regions = settings.capture[input.appType]?.regions || null
+  const multiSessionEnabled = adapterSettings.multiSessionEnabled
+  const headerConfigured = adapterSettings.headerConfigured && Boolean(regions?.header)
+  const unreadIndicatorConfigured =
+    adapterSettings.unreadIndicatorConfigured && Boolean(regions?.unreadIndicator)
+  const hasContactKey = Boolean(input.currentContact?.trim())
+  const currentContactVerified = multiSessionEnabled
+    ? headerConfigured && hasContactKey
+    : hasContactKey
+  const contactKeyHash = currentContactVerified
+    ? customerMemoryStore.hashContactKey(input.appType, input.currentContact || '')
+    : undefined
+  const reasons: string[] = []
+  if (multiSessionEnabled && !headerConfigured) reasons.push('missing_header')
+  if (multiSessionEnabled && !currentContactVerified) reasons.push('contact_not_verified')
+  if (multiSessionEnabled && !unreadIndicatorConfigured) reasons.push('missing_unread_indicator')
+
+  return {
+    multiSessionEnabled,
+    headerConfigured,
+    unreadIndicatorConfigured,
+    currentContactVerified,
+    contactKeyHash,
+    customerMemoryOmittedReason: resolveChannelMemoryOmittedReason({
+      multiSessionEnabled,
+      headerConfigured,
+      currentContactVerified
+    }),
+    finalAction: reasons.includes('missing_header') ? 'draft_review' : 'allow_send',
+    reasons
+  }
+}
+
+function buildCustomerMemoryForProvider(
+  input: ProviderInput,
+  channelContext: ProviderInputChannelContext
+): ReturnType<CustomerMemoryStore['buildProviderInputByContact']> {
+  if (channelContext.customerMemoryOmittedReason) {
+    return { omittedReason: channelContext.customerMemoryOmittedReason }
+  }
+  const result = customerMemoryStore.buildProviderInputByContact(input.appType, input.currentContact)
+  if (result.omittedReason) {
+    channelContext.customerMemoryOmittedReason = result.omittedReason
+  }
+  return result
+}
+
+function resolveChannelMemoryOmittedReason(input: {
+  multiSessionEnabled: boolean
+  headerConfigured: boolean
+  currentContactVerified: boolean
+}): ProviderInputChannelContext['customerMemoryOmittedReason'] {
+  if (input.multiSessionEnabled && !input.headerConfigured) return 'missing_header'
+  if (input.multiSessionEnabled && !input.currentContactVerified) return 'contact_not_verified'
+  return undefined
+}
+
 /**
  * 把 capture 配置 + strategy 解析成具体设备实例。
  * VLM 和 box-select 只决定"如何测量 LayoutCache"，后续运行统一消费 LayoutCache。
@@ -1353,7 +1454,28 @@ async function buildDevice(
     regions = wizardResult.regions
     persistRegionsAndStickyStrategy(appType, regions, perApp.strategy)
   }
-  return { device: new BoxSelectDevice(regions), strategy: 'box-select' }
+  const adapterSettings = channelAdapterStore.get(appType)
+  const runtimeRegions: BoxRegions = {
+    ...regions,
+    multiSessionEnabled: adapterSettings.multiSessionEnabled
+  }
+  if (adapterSettings.multiSessionEnabled) {
+    return {
+      device: new AdapterBoxSelectDevice(runtimeRegions, {
+        onAudit: (event) => {
+          auditStore.record({
+            category: event.category,
+            action: event.action,
+            severity: event.category === 'error' ? 'error' : 'info',
+            message: event.message,
+            metadata: event.metadata
+          })
+        }
+      }),
+      strategy: 'box-select'
+    }
+  }
+  return { device: new BoxSelectDevice(runtimeRegions), strategy: 'box-select' }
 }
 
 /** 把向导产出的 regions 写回 settings，并保留当前策略配置。 */

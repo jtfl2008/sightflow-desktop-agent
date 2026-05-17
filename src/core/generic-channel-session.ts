@@ -202,6 +202,15 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
         appType: ctx.appType
       }, ctx)
 
+      if (providerInput.draftMode === 'manual_takeover') {
+        ctx.host.log('skip', '渠道上下文要求人工接管')
+        await ctx.host.stopSession('channel_manual_takeover')
+        return
+      }
+      if (providerInput.draftMode === 'draft_review') {
+        ctx.state.forcedReplyMode = 'draft_review'
+      }
+
       const route = providerInput.route
       const action = route?.action
       if (route && action === 'blocked') {

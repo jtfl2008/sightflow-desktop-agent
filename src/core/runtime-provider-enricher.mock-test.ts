@@ -107,10 +107,39 @@ async function testRequiresReviewForcesDraft(): Promise<void> {
   await runtime.stopSession('done')
 }
 
+async function testChannelDraftModeForcesDraft(): Promise<void> {
+  const device = new EnricherMockDevice()
+  const runtime = new RuntimeHost({
+    appType: 'wechat',
+    channel: new GenericChannelSession(device, {
+      providerInputEnricher: (input) => ({
+        ...input,
+        draftMode: 'draft_review',
+        channelContext: {
+          multiSessionEnabled: true,
+          headerConfigured: false,
+          unreadIndicatorConfigured: true,
+          currentContactVerified: false,
+          customerMemoryOmittedReason: 'missing_header',
+          finalAction: 'draft_review',
+          reasons: ['missing_header', 'contact_not_verified']
+        }
+      })
+    }),
+    provider: new CapturingProvider(),
+    initialState: createInitialGenericChannelState()
+  })
+  await runtime.startSession()
+  await waitFor(() => device.draftMessages.length === 1)
+  assert.equal(device.sentMessages.length, 0)
+  await runtime.stopSession('done')
+}
+
 async function main(): Promise<void> {
   await testProviderReceivesEnrichedInput()
   await testBlockedRouteSkipsProvider()
   await testRequiresReviewForcesDraft()
+  await testChannelDraftModeForcesDraft()
   console.log('runtime provider enricher mock tests passed')
 }
 

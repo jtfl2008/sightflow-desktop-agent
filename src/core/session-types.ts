@@ -1,6 +1,25 @@
 import { AppType } from './rpa/types'
 import type { IntentContext, RouteDecision } from './intent-types'
-import type { ProviderInputCustomerProfile } from './customer-memory-types'
+import type {
+  CustomerMemoryOmittedReason,
+  ProviderInputCustomerProfile
+} from './customer-memory-types'
+
+export type ProviderInputChannelFinalAction = 'allow_send' | 'draft_review' | 'pause'
+
+export interface ProviderInputChannelContext {
+  multiSessionEnabled: boolean
+  headerConfigured: boolean
+  unreadIndicatorConfigured: boolean
+  currentContactVerified: boolean
+  contactKeyHash?: string
+  customerMemoryOmittedReason?:
+    | CustomerMemoryOmittedReason
+    | 'missing_header'
+    | 'contact_not_verified'
+  finalAction: ProviderInputChannelFinalAction
+  reasons: string[]
+}
 
 export interface ProviderInput {
   screenshot: string
@@ -25,6 +44,7 @@ export interface ProviderInput {
   intent?: IntentContext
   route?: RouteDecision
   customerProfile?: ProviderInputCustomerProfile
+  channelContext?: ProviderInputChannelContext
 }
 
 export type ProviderEvent =
