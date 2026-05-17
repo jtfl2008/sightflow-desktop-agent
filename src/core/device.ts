@@ -12,6 +12,20 @@
 import { AppType } from './rpa/types'
 import { BBox } from './rpa/vision-utils'
 
+export type DeviceDeliveryMode = 'draft' | 'send'
+
+export interface DeviceDeliveryResult {
+  success: boolean
+  mode: DeviceDeliveryMode
+  error?: string
+  audit?: {
+    category: 'message' | 'error'
+    action: string
+    message?: string
+    metadata?: Record<string, unknown>
+  }
+}
+
 export interface DesktopDevice {
   // ── 配置 ──
   setAppType(appType: AppType): void
@@ -82,6 +96,9 @@ export interface DesktopDevice {
 
   /** 发送消息（clipboard paste + enter） */
   sendMessage(text: string): Promise<void>
+
+  /** 只填入输入框草稿（clipboard paste，不按 Enter） */
+  draftMessage(text: string): Promise<DeviceDeliveryResult>
 
   /**
    * 点击红点区域激活未读消息（视觉路线）

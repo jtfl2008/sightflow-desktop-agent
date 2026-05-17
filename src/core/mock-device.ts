@@ -1,12 +1,15 @@
 // src/core/mock-device.ts
 // MockDevice — DesktopDevice 的模拟实现（用于开发测试）
 
-import { DesktopDevice } from './device'
+import { DesktopDevice, DeviceDeliveryResult } from './device'
 import { desktopCapturer } from 'electron'
 import { AppType } from './rpa/types'
 import { BBox } from './rpa/vision-utils'
 
 export class MockDevice implements DesktopDevice {
+  sentMessages: string[] = []
+  draftMessages: string[] = []
+
   setAppType(_appType: AppType): void {
     // Mock 不依赖窗口类型
   }
@@ -66,7 +69,22 @@ export class MockDevice implements DesktopDevice {
   }
 
   async sendMessage(text: string): Promise<void> {
+    this.sentMessages.push(text)
     console.log(`[MockDevice] Sent: ${text}`)
+  }
+
+  async draftMessage(text: string): Promise<DeviceDeliveryResult> {
+    this.draftMessages.push(text)
+    console.log(`[MockDevice] Drafted: ${text}`)
+    return {
+      success: true,
+      mode: 'draft',
+      audit: {
+        category: 'message',
+        action: 'draft_filled',
+        metadata: { device: 'mock' }
+      }
+    }
   }
 
   async activeUnreadByClick(coordinates: [number, number]): Promise<void> {
