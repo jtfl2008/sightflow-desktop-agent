@@ -17,6 +17,46 @@ export interface RendererChannelAdapterSaveResult {
   error?: string
 }
 
+export function validateRendererChannelAdapterSetEnabled(
+  input: ChannelAdapterSettingsInput,
+  presets: ChannelAdapterPreset[],
+  now: () => Date = () => new Date()
+): RendererChannelAdapterSaveResult {
+  return validateRendererChannelAdapterSave(
+    {
+      appType: input.appType,
+      manifestId: input.manifestId,
+      enabled: input.enabled,
+      multiSessionEnabled: input.multiSessionEnabled,
+      headerConfigured: input.headerConfigured,
+      unreadIndicatorConfigured: input.unreadIndicatorConfigured,
+      officialSupport: input.officialSupport,
+      capabilities: input.capabilities,
+      runtimeMode: input.runtimeMode,
+      safetyMode: input.safetyMode
+    },
+    presets,
+    now
+  )
+}
+
+export function buildChannelAdapterDisabledFallback(
+  appType: AppType,
+  now: () => Date = () => new Date()
+): ChannelAdapterSettings {
+  return normalizeChannelAdapterSettings(
+    {
+      ...defaultChannelAdapterSettings(appType, now),
+      appType,
+      manifestId: '',
+      enabled: false,
+      multiSessionEnabled: false,
+      capabilities: ['single_session']
+    },
+    now
+  )
+}
+
 export function validateRendererChannelAdapterSave(
   input: ChannelAdapterSettingsInput,
   presets: ChannelAdapterPreset[],

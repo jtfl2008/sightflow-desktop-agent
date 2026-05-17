@@ -44,7 +44,11 @@ import { registerVisionReplayIpc } from './vision-replay-ipc'
 import { manifestFromPreset, validateChannelAdapterManifest } from '../core/channel-adapter/manifest-validator'
 import { createChannelAdapterRuntimeState } from '../core/channel-adapter/runtime-state'
 import { buildProviderChannelContextFromAdapter } from '../core/channel-adapter/provider-channel-context'
-import { validateRendererChannelAdapterSave } from '../core/channel-adapter/renderer-save-guard'
+import {
+  buildChannelAdapterDisabledFallback,
+  validateRendererChannelAdapterSave,
+  validateRendererChannelAdapterSetEnabled
+} from '../core/channel-adapter/renderer-save-guard'
 import type { ProviderInput, ProviderInputChannelContext } from '../core/session-types'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
@@ -752,54 +756,29 @@ app.whenReady().then(async () => {
   ipcMain.handle('channelAdapter:setEnabled', async (_event, input) => {
     const appType = coerceAppType(input?.appType)
     const manifestId = typeof input?.manifestId === 'string' ? input.manifestId : ''
-    const preset = channelAdapterStore.listPresets().find((item) => item.presetId === manifestId)
-    if (!preset) {
-      const settings = channelAdapterStore.save({
+    const validation = validateRendererChannelAdapterSetEnabled(
+      {
+        ...input,
         appType,
         manifestId,
-        enabled: false,
-        multiSessionEnabled: false
-      })
+        enabled: input?.enabled === true,
+        multiSessionEnabled: input?.enabled === true && input?.multiSessionEnabled === true
+      },
+      channelAdapterStore.listPresets()
+    )
+    if (!validation.ok || !validation.settings) {
+      const settings = channelAdapterStore.save(buildChannelAdapterDisabledFallback(appType))
       auditStore.record({
         category: 'layout',
         action: 'layout.invalid_adapter_fallback',
         severity: 'warn',
-        metadata: { appType, manifestId, errorCode: 'adapter.manifest.not_found' }
+        message: validation.error,
+        metadata: { appType, requestedManifestId: manifestId, errorCode: validation.errorCode }
       })
-      return { ok: false, errorCode: 'adapter.manifest.not_found', settings }
+      return { ok: false, errorCode: validation.errorCode, error: validation.error, settings }
     }
 
-    const validation = validateChannelAdapterManifest(manifestFromPreset(preset))
-    if (!validation.valid || !validation.manifest) {
-      const settings = channelAdapterStore.save({
-        appType,
-        manifestId,
-        enabled: false,
-        multiSessionEnabled: false
-      })
-      auditStore.record({
-        category: 'layout',
-        action: 'layout.invalid_adapter_fallback',
-        severity: 'warn',
-        metadata: { appType, manifestId, errors: validation.errors }
-      })
-      return {
-        ok: false,
-        errorCode: validation.errorCode || 'adapter.manifest.invalid',
-        settings
-      }
-    }
-
-    const settings = channelAdapterStore.save({
-      appType,
-      manifestId: validation.manifest.manifestId,
-      version: validation.manifest.version,
-      enabled: input?.enabled === true,
-      multiSessionEnabled: input?.enabled === true && input?.multiSessionEnabled === true,
-      presetSource: validation.manifest.source,
-      officialSupport: false,
-      capabilities: validation.manifest.capabilities
-    })
+    const settings = channelAdapterStore.save(validation.settings)
     auditStore.record({
       category: 'layout',
       action: settings.multiSessionEnabled
