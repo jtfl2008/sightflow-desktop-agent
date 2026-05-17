@@ -75,10 +75,13 @@ function testExportsRedactSecretsAndClipboardHistory(): void {
   assert.equal(json.includes('Bearer abc'), false)
   assert.equal(json.includes('copied text'), false)
   assert.equal(json.includes('data:image/png'), false)
-  assert.equal(json.includes('visible'), true)
+  assert.equal(json.includes('visible'), false)
+  assert.equal(json.includes('unknown_nested_object'), true)
+  assert.equal(json.includes('"unknownFieldCount": 1'), true)
+  assert.equal(json.includes('"records": []'), true)
   assert.equal(markdown.includes('sk-live'), false)
   assert.equal(markdown.includes('copied text'), false)
-  assert.equal(markdown.includes('[REDACTED]'), true)
+  assert.equal(markdown.includes('Export blocked'), true)
 }
 
 function main(): void {

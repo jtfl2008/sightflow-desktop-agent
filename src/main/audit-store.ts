@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module'
 import { AuditEventInput, AuditExport, AuditRecord } from './audit-types'
+import { buildRedactedAuditExport, formatAuditExportMarkdown } from './audit-export-redaction'
 
 const nodeRequire = createRequire(__filename)
 
@@ -60,22 +61,28 @@ export class AuditStore {
   }
 
   exportJson(limit = this.maxRecords): string {
-    return `${JSON.stringify(this.exportData(limit), null, 2)}\n`
+    const exportedAt = this.now().toISOString()
+    const redacted = buildRedactedAuditExport(
+      {
+        exportedAt,
+        records: this.getRecent(limit)
+      },
+      exportedAt
+    )
+    return `${JSON.stringify(redacted, null, 2)}\n`
   }
 
   exportMarkdown(limit = this.maxRecords): string {
-    const lines = ['# Audit Log', '', `Exported at: ${this.now().toISOString()}`, '']
-    for (const record of this.getRecent(limit)) {
-      lines.push(
-        `## ${record.occurredAt} ${record.category}.${record.action}`,
-        '',
-        `- Severity: ${record.severity}`,
-        `- ID: ${record.id}`
+    const exportedAt = this.now().toISOString()
+    return formatAuditExportMarkdown(
+      buildRedactedAuditExport(
+        {
+          exportedAt,
+          records: this.getRecent(limit)
+        },
+        exportedAt
       )
-      if (record.message) lines.push(`- Message: ${record.message}`)
-      lines.push('', '```json', JSON.stringify(record.metadata, null, 2), '```', '')
-    }
-    return `${lines.join('\n')}\n`
+    )
   }
 
   clear(): void {
