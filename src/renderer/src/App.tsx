@@ -10,7 +10,7 @@ interface LogEntry {
 }
 
 type EngineStatus = 'idle' | 'running' | 'error'
-type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge'
+type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge' | 'intent'
 type AppType = 'wechat' | 'wework' | 'dingtalk' | 'lark' | 'slack' | 'telegram' | 'generic'
 
 type CaptureStrategy = 'auto' | 'vlm' | 'box-select'
@@ -662,6 +662,12 @@ function SettingsWindow(): React.JSX.Element {
         >
           知识库
         </button>
+        <button
+          className={`settings-nav-item ${section === 'intent' ? 'active' : ''}`}
+          onClick={() => setSection('intent')}
+        >
+          意图路由
+        </button>
       </aside>
 
       <main className="settings-main">
@@ -671,8 +677,10 @@ function SettingsWindow(): React.JSX.Element {
           <AgentPanel />
         ) : section === 'review' ? (
           <DraftAuditDashboard />
-        ) : (
+        ) : section === 'knowledge' ? (
           <KnowledgeSettingsPage />
+        ) : (
+          <IntentRoutingSettingsPage />
         )}
       </main>
     </div>
@@ -1170,6 +1178,181 @@ function KnowledgeSettingsPage(): React.JSX.Element {
           </div>
         </section>
       </div>
+    </div>
+  )
+}
+
+function IntentRoutingSettingsPage(): React.JSX.Element {
+  const [settings, setSettings] = useState<any | null>(null)
+  const [selectedId, setSelectedId] = useState('')
+  const [sample, setSample] = useState('请问价格是多少？')
+  const [preview, setPreview] = useState<any | null>(null)
+  const [error, setError] = useState('')
+  const [dirty, setDirty] = useState(false)
+  const rules = settings?.rules || []
+  const selectedRule = rules.find((rule: any) => rule.id === selectedId) || rules[0]
+
+  const loadIntentSettings = useCallback(async () => {
+    const next = await window.electron?.invoke('intentRouting:get')
+    const withSample =
+      next?.rules?.length
+        ? next
+        : {
+            ...next,
+            enabled: true,
+            rules: [
+              {
+                id: 'pricing_rule',
+                enabled: true,
+                priority: 1,
+                intentId: 'pricing_inquiry',
+                label: '咨询',
+                score: 0.72,
+                conditions: [{ type: 'keyword', keywords: ['价格', '费用'], match: 'any' }]
+              },
+              {
+                id: 'complaint_rule',
+                enabled: true,
+                priority: 2,
+                intentId: 'complaint',
+                label: '投诉',
+                score: 0.78,
+                conditions: [{ type: 'keyword', keywords: ['投诉', '不满'], match: 'any' }]
+              },
+              {
+                id: 'risk_rule',
+                enabled: true,
+                priority: 0,
+                intentId: 'sensitive_action',
+                label: '高风险',
+                score: 0.9,
+                conditions: [{ type: 'keyword', keywords: ['密码', '转账'], match: 'any' }]
+              }
+            ],
+            routes: [
+              { id: 'pricing_route', enabled: true, priority: 1, intentIds: ['pricing_inquiry'], label: '咨询回复', action: 'run_provider', promptPresetId: 'sales' },
+              { id: 'risk_blocked', enabled: true, priority: 0, intentIds: ['sensitive_action'], label: '高风险阻断', action: 'blocked' },
+              { id: 'fallback_review', enabled: true, priority: 999, intentIds: ['unknown'], label: '低置信人工确认', action: 'run_provider_requires_review', forcedReplyMode: 'draft_review' }
+            ],
+            promptPresets: [{ id: 'sales', label: '销售模板', systemHint: '优先使用价格知识', enabled: true }]
+          }
+    setSettings(withSample)
+    setSelectedId(withSample.rules?.[0]?.id || '')
+  }, [])
+
+  useEffect(() => {
+    void loadIntentSettings()
+  }, [loadIntentSettings])
+
+  useEffect(() => {
+    if (!settings) return
+    void (async () => {
+      const result = await window.electron?.invoke('intentRouting:preview', {
+        settings,
+        context: {
+          appType: 'wechat',
+          routeTestText: sample,
+          ocrText: sample,
+          knowledgeSnippets: [],
+          replyMode: 'auto_send',
+          now: Date.now()
+        }
+      })
+      setPreview(result?.result || null)
+    })()
+  }, [sample, settings])
+
+  const updateRule = useCallback(
+    (patch: Record<string, unknown>) => {
+      setDirty(true)
+      setSettings((current: any) => ({
+        ...current,
+        rules: current.rules.map((rule: any) => (rule.id === selectedRule.id ? { ...rule, ...patch } : rule))
+      }))
+    },
+    [selectedRule]
+  )
+
+  const saveIntentSettings = useCallback(async () => {
+    const result = await window.electron?.invoke('intentRouting:save', settings)
+    if (!result?.success) {
+      setError(`保存失败，请重试：${result?.error || ''}`)
+      return
+    }
+    setError('')
+    setDirty(false)
+    setSettings(result.settings)
+  }, [settings])
+
+  if (!settings) return <EmptyState label="意图路由加载中" />
+
+  return (
+    <div className="draft-dashboard intent-page">
+      <header className="draft-header">
+        <div>
+          <h1>意图路由与安全策略</h1>
+          <p>配置意图标签、置信度阈值、Prompt 模板、知识范围与强制审核策略。</p>
+        </div>
+        <div className="draft-header-actions">
+          <StatusChip label={settings.enabled ? '运行中' : '已停用'} tone={settings.enabled ? 'success' : 'warning'} />
+          <StatusChip label={dirty ? '未保存' : '已保存'} tone={dirty ? 'warning' : 'success'} />
+          <button className="review-btn primary" onClick={saveIntentSettings}>保存</button>
+        </div>
+      </header>
+      {error ? <ErrorBanner message={error} /> : null}
+      <div className="intent-grid">
+        <section className="draft-panel intent-list">
+          <h2>意图标签</h2>
+          <label className="knowledge-enabled"><input type="checkbox" checked={settings.enabled} onChange={(event) => { setDirty(true); setSettings({ ...settings, enabled: event.target.checked }) }} /> 启用路由</label>
+          {rules.map((rule: any) => (
+            <button key={rule.id} className={`knowledge-row ${rule.id === selectedRule?.id ? 'active' : ''} ${rule.enabled ? '' : 'muted'}`} onClick={() => setSelectedId(rule.id)}>
+              <strong>{rule.label}</strong>
+              <StatusChip label={`置信度 ${Math.round(rule.score * 100)}%`} tone={rule.score < settings.minConfidenceForAutoRoute ? 'warning' : 'info'} />
+              <span>{rule.intentId}</span>
+            </button>
+          ))}
+        </section>
+        <section className="draft-panel knowledge-editor">
+          <h2>策略编辑</h2>
+          <label>意图标签</label>
+          <input value={selectedRule?.label || ''} onChange={(event) => updateRule({ label: event.target.value })} />
+          <label>置信度阈值</label>
+          <input type="range" min="0" max="1" step="0.01" value={selectedRule?.score || 0} onChange={(event) => updateRule({ score: Number(event.target.value) })} />
+          <label>Prompt 模板</label>
+          <select value={settings.routes?.[0]?.promptPresetId || ''} onChange={() => setDirty(true)}>
+            <option value="sales">销售模板</option>
+            <option value="">默认模板</option>
+          </select>
+          <label>知识范围</label>
+          <select onChange={() => setDirty(true)}>
+            <option>全部知识</option>
+            <option>FAQ</option>
+            <option>文档</option>
+          </select>
+          <label className="knowledge-enabled"><input type="checkbox" checked={selectedRule?.intentId === 'sensitive_action'} onChange={() => setDirty(true)} /> 强制审核</label>
+          <div className="error-banner">低置信：需人工确认</div>
+        </section>
+        <section className="draft-panel intent-preview">
+          <h2>路由预览</h2>
+          <textarea className="draft-editor" value={sample} onChange={(event) => setSample(event.target.value)} />
+          <div className="preview-result">
+            <StatusChip label={preview?.intent?.primaryIntentId || 'unknown'} tone={preview?.intent?.fallbackUsed ? 'warning' : 'info'} />
+            <strong>置信度 {Math.round((preview?.intent?.confidence || 0) * 100)}%</strong>
+            <p>Route: {preview?.route?.label || '-'}</p>
+            <p>Action: {preview?.route?.action || '-'}</p>
+          </div>
+          {preview?.intent?.fallbackUsed ? <div className="error-banner">低置信：需人工确认</div> : null}
+          {preview?.route?.action === 'blocked' ? <div className="error-banner">审核必需：高风险路由已阻断</div> : null}
+        </section>
+      </div>
+      <section className="draft-panel audit-table-panel">
+        <div className="audit-filter-bar">
+          <h2>审计记录</h2>
+          <input className="audit-search" placeholder="过滤 intent/route/matchedKnowledge" />
+          <button className="review-btn secondary">查询</button>
+        </div>
+        <EmptyState label="暂无审计记录" />
+      </section>
     </div>
   )
 }

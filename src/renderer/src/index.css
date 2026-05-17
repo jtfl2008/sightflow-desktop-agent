@@ -1365,3 +1365,49 @@ textarea.form-input {
     grid-column: 1 / -1;
   }
 }
+
+/* ─── Intent Routing Settings ─── */
+.intent-grid {
+  display: grid;
+  grid-template-columns: 300px minmax(380px, 1fr) 320px;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.intent-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+}
+
+.intent-preview .draft-editor {
+  min-height: 116px;
+  background: #ffffff;
+  border-color: #e5e7eb;
+}
+
+.preview-result {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  color: #111827;
+}
+
+.preview-result p {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+@media (max-width: 1180px) {
+  .intent-grid {
+    grid-template-columns: 300px minmax(360px, 1fr);
+  }
+
+  .intent-preview {
+    grid-column: 1 / -1;
+  }
+}
