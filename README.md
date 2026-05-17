@@ -81,12 +81,21 @@ npm run dev
 
 ## 📦 打包构建 (Build)
 
+### 平台支持边界
+
+- **macOS**：当前主要验证平台，支持开发运行、权限申请、屏幕捕获、视觉定位、手动框选和本地打包。
+- **Windows**：支持开发运行和本地打包；截图、窗口识别、鼠标键盘自动化依赖系统权限、显示缩放和目标应用窗口状态，发布前需要在目标 Windows 环境回归验证。
+- **Linux**：仓库保留 `AppImage` / `snap` / `deb` 打包配置，但桌面自动化依赖窗口管理器、Wayland/X11、截图权限和输入模拟能力；当前视为实验性支持，需要按发行版和桌面环境单独验证。
+
 ```bash
 # 构建 Windows 版本
 npm run build:win
 
 # 构建 macOS 版本
 npm run build:mac
+
+# 构建 Linux 版本（实验性）
+npm run build:linux
 
 ```
 
