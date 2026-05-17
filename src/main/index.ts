@@ -40,6 +40,8 @@ import { ChannelAdapterStore } from './channel-adapter-store'
 import { CustomerMemoryStore } from './customer-memory-store'
 import { VisionReplayStore } from './vision-replay-store'
 import { registerVisionReplayIpc } from './vision-replay-ipc'
+import { manifestFromPreset, validateChannelAdapterManifest } from '../core/channel-adapter/manifest-validator'
+import { createChannelAdapterRuntimeState } from '../core/channel-adapter/runtime-state'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
 const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260428'
@@ -737,6 +739,106 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('channelAdapter:get', async (_event, appType: AppType) => {
     return channelAdapterStore.get(coerceAppType(appType))
+  })
+
+  ipcMain.handle('channelAdapter:listPresets', async () => {
+    return channelAdapterStore.listPresets()
+  })
+
+  ipcMain.handle('channelAdapter:setEnabled', async (_event, input) => {
+    const appType = coerceAppType(input?.appType)
+    const manifestId = typeof input?.manifestId === 'string' ? input.manifestId : ''
+    const preset = channelAdapterStore.listPresets().find((item) => item.presetId === manifestId)
+    if (!preset) {
+      const settings = channelAdapterStore.save({
+        appType,
+        manifestId,
+        enabled: false,
+        multiSessionEnabled: false
+      })
+      auditStore.record({
+        category: 'layout',
+        action: 'layout.invalid_adapter_fallback',
+        severity: 'warn',
+        metadata: { appType, manifestId, errorCode: 'adapter.manifest.not_found' }
+      })
+      return { ok: false, errorCode: 'adapter.manifest.not_found', settings }
+    }
+
+    const validation = validateChannelAdapterManifest(manifestFromPreset(preset))
+    if (!validation.valid || !validation.manifest) {
+      const settings = channelAdapterStore.save({
+        appType,
+        manifestId,
+        enabled: false,
+        multiSessionEnabled: false
+      })
+      auditStore.record({
+        category: 'layout',
+        action: 'layout.invalid_adapter_fallback',
+        severity: 'warn',
+        metadata: { appType, manifestId, errors: validation.errors }
+      })
+      return {
+        ok: false,
+        errorCode: validation.errorCode || 'adapter.manifest.invalid',
+        settings
+      }
+    }
+
+    const settings = channelAdapterStore.save({
+      appType,
+      manifestId: validation.manifest.manifestId,
+      version: validation.manifest.version,
+      enabled: input?.enabled === true,
+      multiSessionEnabled: input?.enabled === true && input?.multiSessionEnabled === true,
+      presetSource: validation.manifest.source,
+      officialSupport: false,
+      capabilities: validation.manifest.capabilities
+    })
+    auditStore.record({
+      category: 'layout',
+      action: settings.multiSessionEnabled
+        ? 'layout.multisession_enable_requested'
+        : 'layout.single_session_enabled',
+      metadata: { ...settings }
+    })
+    return { ok: true, settings }
+  })
+
+  ipcMain.handle('channelAdapter:verifyRegions', async (_event, input) => {
+    const appType = coerceAppType(input?.appType)
+    const manifestId = typeof input?.manifestId === 'string' ? input.manifestId : ''
+    const preset = channelAdapterStore.listPresets().find((item) => item.presetId === manifestId)
+    const validation = preset
+      ? validateChannelAdapterManifest(manifestFromPreset(preset))
+      : { valid: false, errorCode: 'adapter.manifest.not_found', errors: ['manifest not found'] }
+    const capture = normalizeCapture(settingsStore.get('capture'))
+    const regions = capture[appType]?.regions || null
+    const missingRequired = (['contactList', 'chatMain', 'inputBox'] as const).filter(
+      (key) => !regions?.[key]
+    )
+    const missingForAutoSend = regions?.header ? [] : (['header'] as const)
+    const warnings = [
+      ...(validation.valid ? [] : [`invalid manifest: ${validation.errors.join('; ')}`]),
+      ...(regions?.unreadIndicator ? [] : ['missing unreadIndicator: fallback chatMain_diff_only']),
+      ...(regions?.header ? [] : ['missing header: finalAction draft_review or pause only'])
+    ]
+    return {
+      ok: validation.valid && missingRequired.length === 0,
+      missingRequired,
+      missingForAutoSend,
+      warnings,
+      finalAction: missingForAutoSend.length ? 'draft_review' : 'allow_send'
+    }
+  })
+
+  ipcMain.handle('channelAdapter:getRuntimeState', async (_event, appType: AppType) => {
+    const coerced = coerceAppType(appType)
+    return createChannelAdapterRuntimeState({
+      appType: coerced,
+      settings: channelAdapterStore.get(coerced)
+    })
   })
 
   ipcMain.handle('channelAdapter:save', async (_event, settings) => {

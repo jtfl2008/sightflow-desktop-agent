@@ -2016,31 +2016,40 @@ function IntentRoutingSettingsPage(): React.JSX.Element {
 function ChannelAdapterSettingsPage(): React.JSX.Element {
   const [appType, setAppType] = useState<AppType>('lark')
   const [settings, setSettings] = useState<any | null>(null)
+  const [presets, setPresets] = useState<Array<{ presetId: string; appType: AppType; displayName: string; source: string; officialSupport: false; capabilities: string[]; description: string }>>([])
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     void (async () => {
-      const next = await window.electron?.invoke('channelAdapter:get', appType)
+      const [next, nextPresets] = await Promise.all([
+        window.electron?.invoke('channelAdapter:get', appType),
+        window.electron?.invoke('channelAdapter:listPresets')
+      ])
       setSettings(next)
+      setPresets((nextPresets || []) as typeof presets)
     })()
   }, [appType])
 
-  const save = useCallback(
-    async (patch: Record<string, unknown>) => {
-      const result = await window.electron?.invoke('channelAdapter:save', {
-        ...settings,
-        ...patch,
-        appType
+  const selectedPreset = presets.find((preset) => preset.appType === appType) || presets[0]
+
+  const setEnabled = useCallback(
+    async (enabled: boolean, multiSessionEnabled = false) => {
+      const result = await window.electron?.invoke('channelAdapter:setEnabled', {
+        appType,
+        manifestId: selectedPreset?.presetId || settings?.manifestId || '',
+        enabled,
+        multiSessionEnabled
       })
-      if (!result?.success) {
-        setError(result?.error || 'invalid adapter')
+      if (!result?.ok) {
+        setError(result?.errorCode || 'invalid adapter')
+        if (result?.settings) setSettings(result.settings)
         return
       }
       setError('')
       setSettings(result.settings)
     },
-    [appType, settings]
+    [appType, selectedPreset, settings]
   )
 
   const openAdapterWizard = useCallback(async () => {
@@ -2053,11 +2062,9 @@ function ChannelAdapterSettingsPage(): React.JSX.Element {
       return
     }
     setError('')
-    await save({
-      headerConfigured: Boolean(result.regions?.header),
-      unreadIndicatorConfigured: Boolean(result.regions?.unreadIndicator)
-    })
-  }, [appType, save])
+    const next = await window.electron?.invoke('channelAdapter:get', appType)
+    setSettings(next)
+  }, [appType])
 
   if (!settings) return <EmptyState label="渠道适配加载中" />
 
@@ -2085,7 +2092,8 @@ function ChannelAdapterSettingsPage(): React.JSX.Element {
           <div className="adapter-card">
             <strong>{settings.manifestId || '未安装适配包'}</strong>
             <p>capabilities: {(settings.capabilities || ['single_session']).join(', ')}</p>
-            <button className="review-btn secondary" onClick={() => save({ enabled: true, manifestId: `${appType}-adapter`, version: '1.0.0', capabilities: ['single_session', 'multi_session_unread_scan'] })}>安装示例适配包</button>
+            <p>source: {selectedPreset?.source || 'local_preset'} · officialSupport=false</p>
+            <button className="review-btn secondary" onClick={() => void setEnabled(true, false)}>安装本地预设</button>
           </div>
         </section>
         <section className="draft-panel">
@@ -2103,7 +2111,7 @@ function ChannelAdapterSettingsPage(): React.JSX.Element {
                   setConfirming(true)
                   return
                 }
-                void save({ enabled: true, multiSessionEnabled: event.target.checked })
+                void setEnabled(true, event.target.checked)
               }}
             />
             启用多会话
@@ -2111,7 +2119,7 @@ function ChannelAdapterSettingsPage(): React.JSX.Element {
           {confirming ? (
             <div className="error-banner">
               启用多会话需显式确认。缺 header 时仅允许草稿审核。
-              <button className="review-btn primary" onClick={() => { setConfirming(false); void save({ enabled: true, multiSessionEnabled: true }) }}>确认启用</button>
+              <button className="review-btn primary" onClick={() => { setConfirming(false); void setEnabled(true, true) }}>确认启用</button>
             </div>
           ) : null}
         </section>
@@ -2124,8 +2132,7 @@ function ChannelAdapterSettingsPage(): React.JSX.Element {
           </div>
           <button className="review-btn secondary" onClick={openAdapterWizard}>追加框选 header / unreadIndicator</button>
           <div className="review-actions">
-            <button className="review-btn secondary" onClick={() => save({ headerConfigured: true })}>标记 header 已配置</button>
-            <button className="review-btn secondary" onClick={() => save({ unreadIndicatorConfigured: true })}>标记 unreadIndicator 已配置</button>
+            <button className="review-btn secondary" onClick={() => window.electron?.invoke('channelAdapter:verifyRegions', { appType, manifestId: settings.manifestId }).then((result) => setError(result?.warnings?.join('；') || '区域已验证'))}>验证区域</button>
           </div>
         </section>
       </div>
