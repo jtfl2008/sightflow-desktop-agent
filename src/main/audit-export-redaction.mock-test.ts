@@ -445,6 +445,50 @@ function testRedactionExportSummaryArrayScalarShapeBlocksRecords(): void {
   )
 }
 
+function testRedactionExportSummaryCheckedAtShapeBlocksRecords(): void {
+  const rawNote = 'pending profile provider webhook ordinary private text'
+  const store = new AuditStore({
+    backend: new MemoryAuditBackend([
+      {
+        id: 'malformed-redaction-summary-checked-at',
+        category: 'provider',
+        action: 'provider_install',
+        severity: 'info',
+        occurredAt: fixedNow().toISOString(),
+        metadata: {
+          redactionExportSummary: {
+            status: 'passed',
+            blockedTypes: [],
+            omittedFieldPaths: [],
+            unknownFieldCount: 0,
+            checkedAt: rawNote
+          }
+        }
+      }
+    ]),
+    now: fixedNow
+  })
+
+  const json = store.exportJson()
+  const markdown = store.exportMarkdown()
+  const parsed = JSON.parse(json)
+
+  for (const exported of [json, markdown]) {
+    assert.equal(exported.includes(rawNote), false)
+  }
+  assert.equal(markdown.includes('Export blocked'), true)
+  assert.equal(parsed.blocked, true)
+  assert.deepEqual(parsed.records, [])
+  assert.equal(parsed.redaction.status, 'blocked')
+  assert.equal(parsed.redaction.unknownFieldCount, 1)
+  assert.ok(parsed.redaction.blockedTypes.includes('unknown_nested_object'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.redactionExportSummary.checkedAt'
+    )
+  )
+}
+
 function main(): void {
   testCustomerMemoryExportRedaction()
   testForbiddenContentReturnsExportSummary()
@@ -454,6 +498,7 @@ function main(): void {
   testUnknownNestedExportObjectBlocksRecords()
   testRedactionExportSummaryNestedObjectBlocksRecords()
   testRedactionExportSummaryArrayScalarShapeBlocksRecords()
+  testRedactionExportSummaryCheckedAtShapeBlocksRecords()
   console.log('audit export redaction mock tests passed')
 }
 

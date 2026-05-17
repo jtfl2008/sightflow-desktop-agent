@@ -80,6 +80,8 @@ const REDACTION_EXPORT_BLOCKED_TYPES = new Set<RedactionExportBlockedType>([
 ])
 const SAFE_OMITTED_FIELD_PATH_PATTERN = /^[A-Za-z0-9_$.[\]-]+$/
 const MAX_OMITTED_FIELD_PATH_LENGTH = 160
+const SAFE_ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/
+const MAX_CHECKED_AT_LENGTH = 32
 
 export function buildRedactedAuditExport(
   value: AuditExport,
@@ -305,15 +307,15 @@ function redactRedactionExportSummary(
         out.omittedFieldPaths = redactOmittedFieldPathsArray(child, childPath, state)
         break
       case 'unknownFieldCount':
-        if (typeof child === 'number' && Number.isFinite(child)) {
+        if (typeof child === 'number' && Number.isSafeInteger(child) && child >= 0) {
           out.unknownFieldCount = child
         } else {
           addUnknownNestedObject(state, childPath)
         }
         break
       case 'checkedAt':
-        if (typeof child === 'string') {
-          out.checkedAt = sanitizeString(child, childPath, state)
+        if (typeof child === 'string' && isSafeIsoTimestamp(child)) {
+          out.checkedAt = child
         } else {
           addUnknownNestedObject(state, childPath)
         }
@@ -378,6 +380,15 @@ function isSafeOmittedFieldPath(value: string): boolean {
     value.length > 0 &&
     value.length <= MAX_OMITTED_FIELD_PATH_LENGTH &&
     SAFE_OMITTED_FIELD_PATH_PATTERN.test(value)
+  )
+}
+
+function isSafeIsoTimestamp(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= MAX_CHECKED_AT_LENGTH &&
+    SAFE_ISO_TIMESTAMP_PATTERN.test(value) &&
+    !Number.isNaN(Date.parse(value))
   )
 }
 
