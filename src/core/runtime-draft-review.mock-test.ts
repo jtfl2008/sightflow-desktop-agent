@@ -9,10 +9,16 @@ import { BBox } from './rpa/vision-utils'
 class DraftReviewMockDevice implements DesktopDevice {
   sentMessages: string[] = []
   baselineWrites = 0
+  appType: AppType = 'wechat'
+  apiKey = ''
 
-  setAppType(_appType: AppType): void {}
+  setAppType(appType: AppType): void {
+    this.appType = appType
+  }
 
-  setApiKey(_apiKey: string): void {}
+  setApiKey(apiKey: string): void {
+    this.apiKey = apiKey
+  }
 
   async measureLayout(): Promise<{ success: boolean; error?: string }> {
     return { success: true }
@@ -36,7 +42,9 @@ class DraftReviewMockDevice implements DesktopDevice {
     return { isUnread: false }
   }
 
-  clearUnreadCache(): void {}
+  clearUnreadCache(): void {
+    void this.sentMessages
+  }
 
   async setChatBaseline(): Promise<boolean> {
     this.baselineWrites += 1
@@ -47,17 +55,26 @@ class DraftReviewMockDevice implements DesktopDevice {
     return { hasDiff: false, hasBaseline: true }
   }
 
-  clearChatBaseline(): void {}
+  clearChatBaseline(): void {
+    void this.baselineWrites
+  }
 
   async sendMessage(text: string): Promise<void> {
     this.sentMessages.push(text)
   }
 
-  async activeUnreadByClick(_coordinates: [number, number]): Promise<void> {}
+  async activeUnreadByClick(coordinates: [number, number]): Promise<void> {
+    void coordinates
+  }
 
-  async clickUnreadContact(_coordinates: [number, number]): Promise<void> {}
+  async clickUnreadContact(coordinates: [number, number]): Promise<void> {
+    void coordinates
+  }
 
-  async clickAt(_x: number, _y: number): Promise<void> {}
+  async clickAt(x: number, y: number): Promise<void> {
+    void x
+    void y
+  }
 }
 
 class StaticReplyProvider implements ProviderAdapter {
@@ -67,7 +84,8 @@ class StaticReplyProvider implements ProviderAdapter {
     this.reply = reply
   }
 
-  async *run(_input: ProviderInput): AsyncIterable<ProviderEvent> {
+  async *run(input: ProviderInput): AsyncIterable<ProviderEvent> {
+    void input
     yield { type: 'reply_text', content: this.reply }
   }
 }
@@ -76,7 +94,8 @@ class DeferredReplyProvider implements ProviderAdapter {
   started = false
   release: (() => void) | null = null
 
-  async *run(_input: ProviderInput): AsyncIterable<ProviderEvent> {
+  async *run(input: ProviderInput): AsyncIterable<ProviderEvent> {
+    void input
     this.started = true
     await new Promise<void>((resolve) => {
       this.release = resolve

@@ -41,14 +41,16 @@ export class RuntimeHost<TState> {
 
     try {
       await this.options.channel.onStart(this.context)
-    } catch (error: any) {
-      this.log('error', error?.message || String(error))
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.log('error', message)
       await this.stopSession('start_failed')
       throw error
     }
   }
 
-  async stopSession(_reason?: string): Promise<void> {
+  async stopSession(reason?: string): Promise<void> {
+    void reason
     if (!this.running || this.stopping) return
 
     this.stopping = true
@@ -121,8 +123,9 @@ export class RuntimeHost<TState> {
 
         await this.options.channel.onEvent(event, this.context)
       }
-    } catch (error: any) {
-      this.log('error', error?.message || String(error))
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.log('error', message)
       await this.stopSession('runtime_error')
     } finally {
       this.processingQueue = false

@@ -51,7 +51,7 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
     this.device.setAppType(ctx.appType)
     this.device.clearChatBaseline()
     this.consecutiveUnreadFailures = 0
-    this.resetState(ctx.state)
+    this.resetState(ctx.state, true)
     await this.device.onSessionStart?.()
     ctx.host.enqueue({ type: 'bootstrap' })
   }
@@ -60,7 +60,7 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
     this.device.clearChatBaseline()
     this.consecutiveUnreadFailures = 0
     await this.device.onSessionStop?.()
-    this.resetState(ctx.state)
+    this.resetState(ctx.state, false)
   }
 
   async onEvent(event: SessionEvent, ctx: ChannelContext<GenericChannelState>): Promise<void> {
@@ -296,10 +296,10 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
     return this.options.replyMode || 'auto_send'
   }
 
-  private resetState(state: GenericChannelState): void {
+  private resetState(state: GenericChannelState, clearDrafts: boolean): void {
     state.measuredAt = null
     state.latestChatBaseline = null
-    state.replyDrafts = []
+    if (clearDrafts) state.replyDrafts = []
     state.activeDraftId = null
     state.lastProviderScreenshot = null
   }
