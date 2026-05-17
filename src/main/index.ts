@@ -1407,7 +1407,8 @@ function buildCustomerMemoryForProvider(
   }
   const result = customerMemoryStore.buildProviderInputByContact(input.appType, input.currentContact)
   if (result.omittedReason) {
-    channelContext.customerMemoryOmittedReason = result.omittedReason
+    channelContext.customerMemoryOmittedReason =
+      result.omittedReason as ProviderInputChannelContext['customerMemoryOmittedReason']
   }
   return result
 }
