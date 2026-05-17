@@ -2741,16 +2741,13 @@ function ProviderProductionInstallPage(): React.JSX.Element {
     async (action: 'install' | 'update' | 'rollback') => {
       setBusyAction(action)
       try {
-        const channel =
-          action === 'rollback'
-            ? 'provider:rollback'
-            : action === 'update'
-              ? 'provider:updateFromUrl'
-              : 'provider:installFromUrl'
         const result =
           action === 'rollback'
-            ? await window.electron?.invoke(channel)
-            : await window.electron?.invoke(channel, selected.manifestUrl)
+            ? await window.electron?.providerLifecycle({ operation: 'rollback' })
+            : await window.electron?.providerLifecycle({
+                operation: action,
+                manifestUrl: selected.manifestUrl
+              })
         if (result?.success) {
           showToast(action === 'install' ? 'Provider 已通过生产 gate 安装' : action === 'update' ? 'Provider 已通过生产 gate 更新' : 'Provider 已回滚到上一可信版本', 'success')
         } else {
@@ -3100,7 +3097,10 @@ function AgentPanel(): React.JSX.Element {
         return true
       }
 
-      const installResult = await window.electron?.invoke('provider:installFromUrl', provider.manifestUrl)
+      const installResult = await window.electron?.providerLifecycle({
+        operation: 'install',
+        manifestUrl: provider.manifestUrl
+      })
       if (!installResult?.success) {
         showToast(installResult?.error || '智能体安装失败', 'error')
         return false

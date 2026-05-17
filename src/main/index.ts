@@ -1,5 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, desktopCapturer } from 'electron'
-import { join } from 'path'
+import { dirname, join } from 'path'
+import { readFile } from 'node:fs/promises'
+import { pathToFileURL } from 'node:url'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { checkAndRequestPermissions } from './permission'
@@ -21,6 +23,7 @@ import {
   getBuiltinDoubaoInstalledInfo,
   getBuiltinDoubaoManifestForUi,
   getInstalledProviderManifest,
+  getTrustedPublishersFromEnv,
   installProviderFromUrl,
   InstalledProviderInfo,
   loadBuiltinDoubaoProvider,
@@ -58,6 +61,9 @@ import {
   validateRendererChannelAdapterSetEnabled
 } from '../core/channel-adapter/renderer-save-guard'
 import type { ProviderInput, ProviderInputChannelContext } from '../core/session-types'
+import { ProviderLifecycleStore } from './provider-security/provider-lifecycle-store'
+import { evaluateProviderProductionGate } from './provider-security/provider-production-gate'
+import { validateProviderEntryPath } from './provider-security/provider-manifest-security'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
 const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260428'
@@ -162,6 +168,7 @@ const knowledgeStore = new KnowledgeStore()
 const intentRoutingStore = new IntentRoutingStore()
 const channelAdapterStore = new ChannelAdapterStore()
 const customerMemoryStore = new CustomerMemoryStore()
+const providerLifecycleStore = new ProviderLifecycleStore()
 
 function createWindow(): void {
   // Create the browser window.
@@ -459,122 +466,19 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('provider:installFromUrl', async (_event, manifestUrl: string) => {
-    const current = normalizeSettings(settingsStore.store)
-    try {
-      const result = await installProviderFromUrl(manifestUrl)
-      settingsStore.set({
-        ...current,
-        chatProvider: {
-          ...current.chatProvider,
-          manifestUrl,
-          installed: result.installed,
-          previousInstalled: current.chatProvider.installed,
-          config: withSchemaDefaults(result.manifest.configSchema, current.chatProvider.config)
-        }
-      } as any)
-      recordProviderLifecycleAudit(auditStore, {
-        action: 'provider_install',
-        success: true,
-        manifestUrl,
-        installed: result.installed,
-        manifest: result.manifest,
-        gate: result.productionGate,
-        previousInstalled: current.chatProvider.installed
-      })
-
-      return {
-        success: true,
-        installed: result.installed,
-        manifest: result.manifest,
-        productionGate: result.productionGate
-      }
-    } catch (error: any) {
-      recordProviderLifecycleAudit(auditStore, {
-        action: 'provider_install',
-        success: false,
-        manifestUrl,
-        previousInstalled: current.chatProvider.installed,
-        error: error?.message || String(error)
-      })
-      return { success: false, error: error?.message || String(error) }
-    }
+    return handleProviderLifecycleRequest({ operation: 'install', manifestUrl })
   })
 
   ipcMain.handle('provider:updateFromUrl', async (_event, manifestUrl: string) => {
-    const current = normalizeSettings(settingsStore.store)
-    try {
-      const result = await installProviderFromUrl(manifestUrl)
-      settingsStore.set({
-        ...current,
-        chatProvider: {
-          ...current.chatProvider,
-          manifestUrl,
-          installed: result.installed,
-          previousInstalled: current.chatProvider.installed,
-          config: withSchemaDefaults(result.manifest.configSchema, current.chatProvider.config)
-        }
-      } as any)
-      recordProviderLifecycleAudit(auditStore, {
-        action: 'provider_update',
-        success: true,
-        manifestUrl,
-        installed: result.installed,
-        manifest: result.manifest,
-        gate: result.productionGate,
-        previousInstalled: current.chatProvider.installed
-      })
-      return {
-        success: true,
-        installed: result.installed,
-        manifest: result.manifest,
-        productionGate: result.productionGate
-      }
-    } catch (error: any) {
-      recordProviderLifecycleAudit(auditStore, {
-        action: 'provider_update',
-        success: false,
-        manifestUrl,
-        previousInstalled: current.chatProvider.installed,
-        error: error?.message || String(error)
-      })
-      return { success: false, error: error?.message || String(error) }
-    }
+    return handleProviderLifecycleRequest({ operation: 'update', manifestUrl })
   })
 
   ipcMain.handle('provider:rollback', async () => {
-    const current = normalizeSettings(settingsStore.store)
-    const previousInstalled = current.chatProvider.previousInstalled
-    if (!previousInstalled) {
-      recordProviderLifecycleAudit(auditStore, {
-        action: 'provider_rollback',
-        success: false,
-        installed: current.chatProvider.installed,
-        error: 'No trusted previous provider version is available'
-      })
-      return { success: false, error: '没有可回滚的可信 Provider 版本' }
-    }
+    return handleProviderLifecycleRequest({ operation: 'rollback' })
+  })
 
-    const manifest = await getInstalledProviderManifest(previousInstalled)
-    settingsStore.set({
-      ...current,
-      chatProvider: {
-        ...current.chatProvider,
-        installed: previousInstalled,
-        previousInstalled: current.chatProvider.installed,
-        manifestUrl: '',
-        config: manifest
-          ? withSchemaDefaults(manifest.configSchema, current.chatProvider.config)
-          : current.chatProvider.config
-      }
-    } as any)
-    recordProviderLifecycleAudit(auditStore, {
-      action: 'provider_rollback',
-      success: true,
-      installed: previousInstalled,
-      manifest,
-      previousInstalled: current.chatProvider.installed
-    })
-    return { success: true, installed: previousInstalled, manifest }
+  ipcMain.handle('provider:lifecycle', async (_event, request: ProviderLifecycleRequest) => {
+    return handleProviderLifecycleRequest(request)
   })
 
   ipcMain.handle('provider:getInstalled', async () => {
@@ -1436,6 +1340,149 @@ function buildCustomerMemoryAuditMetadata(
       checkedAt: new Date().toISOString()
     }
   }
+}
+
+type ProviderLifecycleRequest =
+  | { operation: 'install' | 'update'; manifestUrl: string }
+  | { operation: 'rollback' }
+
+async function handleProviderLifecycleRequest(request: ProviderLifecycleRequest): Promise<any> {
+  const current = normalizeSettings(settingsStore.store)
+  if (request.operation === 'rollback') {
+    const previousInstalled = current.chatProvider.previousInstalled
+    if (!previousInstalled) {
+      recordProviderLifecycleAudit(auditStore, {
+        action: 'provider_rollback',
+        success: false,
+        installed: current.chatProvider.installed,
+        error: 'No trusted previous provider version is available'
+      })
+      return { success: false, error: '没有可回滚的可信 Provider 版本' }
+    }
+
+    try {
+      const manifest = await getInstalledProviderManifest(previousInstalled)
+      if (!manifest) throw new Error('未找到可回滚 Provider 的配置清单')
+      const productionGate = await evaluateInstalledProviderGate(previousInstalled, manifest)
+      const lifecycle = providerLifecycleStore.rollback({
+        installed: previousInstalled,
+        manifest,
+        gate: productionGate,
+        manifestPath: relativeProviderManifestPath(previousInstalled)
+      })
+      if (!lifecycle.ok) {
+        throw new Error(`Provider rollback denied: ${lifecycle.reasonCodes.join(', ')}`)
+      }
+      settingsStore.set({
+        ...current,
+        chatProvider: {
+          ...current.chatProvider,
+          installed: previousInstalled,
+          previousInstalled: current.chatProvider.installed,
+          manifestUrl: '',
+          config: withSchemaDefaults(manifest.configSchema, current.chatProvider.config)
+        }
+      } as any)
+      recordProviderLifecycleAudit(auditStore, {
+        action: 'provider_rollback',
+        success: true,
+        installed: previousInstalled,
+        manifest,
+        gate: productionGate,
+        previousInstalled: current.chatProvider.installed
+      })
+      return { success: true, installed: previousInstalled, manifest, productionGate, lifecycle }
+    } catch (error: any) {
+      recordProviderLifecycleAudit(auditStore, {
+        action: 'provider_rollback',
+        success: false,
+        installed: previousInstalled,
+        previousInstalled: current.chatProvider.installed,
+        error: error?.message || String(error)
+      })
+      return { success: false, error: error?.message || String(error) }
+    }
+  }
+
+  const manifestUrl = request.manifestUrl
+  try {
+    const result = await installProviderFromUrl(manifestUrl)
+    const lifecycle = providerLifecycleStore.commitInstallOrUpdate(request.operation, {
+      installed: result.installed,
+      manifest: result.manifest,
+      gate: result.productionGate,
+      manifestPath: relativeProviderManifestPath(result.installed)
+    })
+    if (!lifecycle.ok) {
+      throw new Error(`Provider lifecycle pointer denied: ${lifecycle.reasonCodes.join(', ')}`)
+    }
+    settingsStore.set({
+      ...current,
+      chatProvider: {
+        ...current.chatProvider,
+        manifestUrl,
+        installed: result.installed,
+        previousInstalled: current.chatProvider.installed,
+        config: withSchemaDefaults(result.manifest.configSchema, current.chatProvider.config)
+      }
+    } as any)
+    recordProviderLifecycleAudit(auditStore, {
+      action: request.operation === 'install' ? 'provider_install' : 'provider_update',
+      success: true,
+      manifestUrl,
+      installed: result.installed,
+      manifest: result.manifest,
+      gate: result.productionGate,
+      previousInstalled: current.chatProvider.installed
+    })
+
+    return {
+      success: true,
+      installed: result.installed,
+      manifest: result.manifest,
+      productionGate: result.productionGate,
+      lifecycle
+    }
+  } catch (error: any) {
+    recordProviderLifecycleAudit(auditStore, {
+      action: request.operation === 'install' ? 'provider_install' : 'provider_update',
+      success: false,
+      manifestUrl,
+      previousInstalled: current.chatProvider.installed,
+      error: error?.message || String(error)
+    })
+    return { success: false, error: error?.message || String(error) }
+  }
+}
+
+async function evaluateInstalledProviderGate(
+  installed: InstalledProviderInfo,
+  manifest: NonNullable<Awaited<ReturnType<typeof getInstalledProviderManifest>>>
+) {
+  const installDir = dirname(installed.entryFile)
+  const artifactPaths = new Set<string>((manifest.artifacts || []).map((artifact) => artifact.path))
+  artifactPaths.add(manifest.entry)
+  const artifactContentByPath: Record<string, string> = {}
+  for (const artifactPath of artifactPaths) {
+    const pathCheck = validateProviderEntryPath(artifactPath)
+    if (!pathCheck.valid || !pathCheck.normalizedPath) {
+      throw new Error(pathCheck.message || 'Provider artifact path invalid')
+    }
+    artifactContentByPath[pathCheck.normalizedPath] = await readFile(
+      join(installDir, pathCheck.normalizedPath),
+      'utf8'
+    )
+  }
+  return evaluateProviderProductionGate({
+    manifest,
+    sourceUrl: pathToFileURL(join(installDir, 'manifest.json')).toString(),
+    trustedPublishers: getTrustedPublishersFromEnv(),
+    artifactContentByPath
+  })
+}
+
+function relativeProviderManifestPath(installed: InstalledProviderInfo): string {
+  return `providers/${installed.id}/${installed.version}/manifest.json`
 }
 
 /**

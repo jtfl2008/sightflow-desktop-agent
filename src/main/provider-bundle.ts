@@ -520,7 +520,7 @@ async function readProviderArtifacts(
   return { contentByPath }
 }
 
-function getTrustedPublishersFromEnv(): TrustedPublisherRecord[] {
+export function getTrustedPublishersFromEnv(): TrustedPublisherRecord[] {
   const raw =
     process.env.SIGHTFLOW_PROVIDER_TRUSTED_PUBLISHERS_JSON ||
     process.env.SIGHTFLOW_TRUSTED_PROVIDER_PUBLISHERS_JSON ||

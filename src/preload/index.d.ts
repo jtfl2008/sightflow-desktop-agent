@@ -1,4 +1,4 @@
-import { ElectronHandler } from './index'
+import { ElectronHandler, ProviderLifecycleRequest } from './index'
 
 declare global {
   interface Window {
@@ -6,5 +6,7 @@ declare global {
     osInfo: { platform: NodeJS.Platform }
   }
 }
+
+export type { ProviderLifecycleRequest }
 
 export {}
