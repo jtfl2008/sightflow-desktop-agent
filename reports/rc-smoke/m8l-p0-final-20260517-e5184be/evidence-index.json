@@ -1,0 +1,135 @@
+{
+  "schemaVersion": "m8l.rc-smoke-evidence.v1",
+  "appMode": "electron_desktop_local_store",
+  "commit": "e5184be",
+  "generatedAt": "2026-05-17T20:00:13Z",
+  "releaseDecision": "needs_minimal_fix",
+  "deploymentManifestGenerated": false,
+  "platforms": [
+    {
+      "platform": "macos",
+      "arch": "unknown",
+      "osVersion": "not_collected",
+      "nodeVersion": "v22.22.2",
+      "npmVersion": "10.9.7",
+      "startupMode": "manual",
+      "evidenceDir": "reports/rc-smoke/m8l-p0-final-20260517-e5184be/macos",
+      "cases": [
+        {
+          "caseId": "macos.real_desktop_smoke",
+          "source": "runtime",
+          "status": "skip",
+          "reasonCode": "manual_platform_smoke_not_collected_current_gate",
+          "evidenceFiles": [],
+          "sensitiveScan": "pass",
+          "assertions": [
+            "No real macOS desktop evidence was present in reports/rc-smoke during final gate review."
+          ]
+        }
+      ]
+    },
+    {
+      "platform": "windows",
+      "arch": "unknown",
+      "osVersion": "not_collected",
+      "nodeVersion": "v22.22.2",
+      "npmVersion": "10.9.7",
+      "startupMode": "manual",
+      "evidenceDir": "reports/rc-smoke/m8l-p0-final-20260517-e5184be/windows",
+      "cases": [
+        {
+          "caseId": "windows.real_desktop_smoke",
+          "source": "runtime",
+          "status": "skip",
+          "reasonCode": "manual_platform_smoke_not_collected_current_gate",
+          "evidenceFiles": [],
+          "sensitiveScan": "pass",
+          "assertions": [
+            "No real Windows desktop evidence was present in reports/rc-smoke during final gate review."
+          ]
+        }
+      ]
+    }
+  ],
+  "commands": [
+    {
+      "command": "npm run typecheck",
+      "status": "pass"
+    },
+    {
+      "command": "npm run build",
+      "status": "pass",
+      "notes": "Existing Vite dynamic/static import chunk warning for src/core/rpa/vision-utils.ts."
+    },
+    {
+      "command": "npx ts-node src/main/provider-security/provider-recovery-fixtures.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/main/provider-security/provider-recovery-reconciliation.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/main/provider-security/provider-production-gate.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/main/provider-security/provider-lifecycle-store.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/main/provider-security/provider-security-verifier.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/main/provider-lifecycle-audit.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/main/audit-store.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/main/audit-export-redaction.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/core/diagnostics/diagnostics-field-whitelist.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/core/diagnostics/diagnostics-redaction-checker.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/core/diagnostics/diagnostics-contact-hash.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/core/diagnostics/diagnostics-aggregator.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/core/diagnostics/diagnostics-export.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "TS_NODE_CACHE=false npx ts-node src/main/diagnostics-ipc.mock-test.ts",
+      "status": "pass"
+    }
+  ],
+  "blockers": [],
+  "minimalFixes": [
+    {
+      "code": "manual_macos_windows_smoke_evidence_missing",
+      "summary": "Collect real macOS and Windows Electron desktop smoke evidence using the M8L P0 case matrix, then replace this final gate index with platform summaries, case results, and sensitive scan outputs."
+    }
+  ],
+  "redactionSummary": {
+    "status": "passed",
+    "blockedTypes": [],
+    "omittedFieldPaths": [],
+    "unknownFieldCount": 0,
+    "checkedAt": "2026-05-17T20:00:13Z"
+  }
+}
