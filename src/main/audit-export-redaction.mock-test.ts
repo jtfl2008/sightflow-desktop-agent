@@ -3,7 +3,11 @@ import { AuditRecord } from './audit-types'
 import { AuditStore } from './audit-store'
 
 class MemoryAuditBackend {
-  private records: AuditRecord[] = []
+  private records: AuditRecord[]
+
+  constructor(initialRecords: AuditRecord[] = []) {
+    this.records = initialRecords
+  }
 
   get(key: 'records'): AuditRecord[] {
     assert.equal(key, 'records')
@@ -68,27 +72,34 @@ function testCustomerMemoryExportRedaction(): void {
 }
 
 function testForbiddenContentReturnsExportSummary(): void {
-  const store = new AuditStore({ backend: new MemoryAuditBackend(), now: fixedNow })
   const longBase64 = 'A'.repeat(220)
-  store.record({
-    category: 'provider',
-    action: 'request',
-    message:
-      'Bearer secret-token alice@example.com 1380-0138-0000 full chat: customer private words',
-    metadata: {
-      webhookBody: { text: 'must not export' },
-      providerConfig: { apiKey: 'sk-live-secret' },
-      customerProfile: {
-        profileId: 'p2',
-        contactKeyHash: 'abcdef123456',
-        fields: {
-          preferenceNotes: ['private profile text']
-        },
-        injectedFieldPaths: ['preferenceNotes']
-      },
-      screenshotBase64: longBase64,
-      safeScalar: 'safe'
-    }
+  const store = new AuditStore({
+    backend: new MemoryAuditBackend([
+      {
+        id: 'raw-forbidden',
+        category: 'provider',
+        action: 'request',
+        severity: 'warn',
+        occurredAt: fixedNow().toISOString(),
+        message:
+          'Bearer secret-token alice@example.com 1380-0138-0000 full chat: customer private words',
+        metadata: {
+          webhookBody: { text: 'must not export' },
+          providerConfig: { apiKey: 'sk-live-secret' },
+          customerProfile: {
+            profileId: 'p2',
+            contactKeyHash: 'abcdef123456',
+            fields: {
+              preferenceNotes: ['private profile text']
+            },
+            injectedFieldPaths: ['preferenceNotes']
+          },
+          longBase64: longBase64,
+          safeScalar: 'safe'
+        }
+      }
+    ]),
+    now: fixedNow
   })
 
   const json = store.exportJson()
