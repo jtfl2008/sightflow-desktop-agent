@@ -177,4 +177,79 @@ if (cachedSafeHashAssignments.ok) {
   assert.equal(cachedSafeHashAssignments.content.includes('AliceBob'), false)
 }
 
+const cachedQuotedPlaintextHashAssignmentsJson = exportDiagnosticsRecord(
+  {
+    ...baseRecord,
+    recordId: 'runtime:"contactHash":"AliceBob"',
+    sourcePartitionId: "runtime:sampleIdHash='customer1'",
+    timeline: [
+      {
+        capability: 'customer_memory',
+        source: 'runtime',
+        status: 'warning',
+        summary: '"contactHash":"AliceBob"',
+        detail: { type: 'customer_memory' },
+        omittedReason: 'contactHash = "JohnDoe1"' as any,
+        errorCode: "contactKeyHash:'wechatid1'"
+      }
+    ]
+  },
+  'json'
+)
+assert.equal(cachedQuotedPlaintextHashAssignmentsJson.ok, false)
+if (!cachedQuotedPlaintextHashAssignmentsJson.ok) {
+  assert.equal(cachedQuotedPlaintextHashAssignmentsJson.errorCode, 'export_contains_sensitive_field')
+  assert.deepEqual(cachedQuotedPlaintextHashAssignmentsJson.blockedTypes, ['plaintext_contact'])
+  assert.deepEqual(cachedQuotedPlaintextHashAssignmentsJson.omittedFieldPaths, [
+    'recordId',
+    'sourcePartitionId',
+    'timeline[0].errorCode',
+    'timeline[0].omittedReason',
+    'timeline[0].summary'
+  ])
+}
+
+const cachedQuotedPlaintextHashAssignmentsMarkdown = exportDiagnosticsRecord(
+  {
+    ...baseRecord,
+    timeline: [
+      {
+        capability: 'vision',
+        source: 'vision_eval',
+        status: 'error',
+        summary: "sampleIdHash='customer1'",
+        detail: { type: 'vision' }
+      }
+    ]
+  },
+  'markdown'
+)
+assert.equal(cachedQuotedPlaintextHashAssignmentsMarkdown.ok, false)
+if (!cachedQuotedPlaintextHashAssignmentsMarkdown.ok) {
+  assert.equal(cachedQuotedPlaintextHashAssignmentsMarkdown.errorCode, 'export_contains_sensitive_field')
+  assert.deepEqual(cachedQuotedPlaintextHashAssignmentsMarkdown.blockedTypes, ['plaintext_contact'])
+  assert.deepEqual(cachedQuotedPlaintextHashAssignmentsMarkdown.omittedFieldPaths, [
+    'timeline[0].summary'
+  ])
+}
+
+const cachedQuotedSafeHashAssignments = exportDiagnosticsRecord(
+  {
+    ...baseRecord,
+    recordId: 'runtime:"contactHash":"ch_abcdef123456"',
+    sourcePartitionId: "runtime:sampleIdHash='0123456789abcdef'",
+    timeline: [
+      {
+        capability: 'vision',
+        source: 'vision_eval',
+        status: 'ok',
+        summary: 'contactKeyHash = "abcdef1234567890"',
+        detail: { type: 'vision' }
+      }
+    ]
+  },
+  'markdown'
+)
+assert.equal(cachedQuotedSafeHashAssignments.ok, true)
+
 console.log('diagnostics-export mock tests passed')
