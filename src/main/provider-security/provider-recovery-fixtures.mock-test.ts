@@ -31,7 +31,9 @@ const REQUIRED_CASE_IDS = new Set([
   'sha256-mismatch',
   'revoked',
   'missing-install',
+  'settings-insecure-transport',
   'active-denied-previous-trusted',
+  'active-denied-previous-insecure',
   'active-denied-no-previous',
   'audit-gap',
   'url-query-local-path-redaction'
@@ -43,6 +45,8 @@ const NEGATIVE_CASE_IDS = new Set([
   'sha256-mismatch',
   'revoked',
   'missing-install',
+  'settings-insecure-transport',
+  'active-denied-previous-insecure',
   'active-denied-no-previous',
   'url-query-local-path-redaction'
 ])
