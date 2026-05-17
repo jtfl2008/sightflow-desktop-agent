@@ -36,6 +36,10 @@ export interface BoxRegions {
   chatMain: ScreenRect
   inputBox: ScreenRect
   unreadIndicator: ScreenRect | null
+  header?: ScreenRect | null
+  adapterId?: string
+  adapterVersion?: string
+  multiSessionEnabled?: boolean
   displayId?: number
   scaleFactor?: number
   capturedAt: number

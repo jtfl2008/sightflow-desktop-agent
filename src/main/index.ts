@@ -35,6 +35,7 @@ import {
 import { AuditStore } from './audit-store'
 import { KnowledgeStore } from './knowledge-store'
 import { IntentRoutingStore } from './intent-routing-store'
+import { ChannelAdapterStore } from './channel-adapter-store'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
 const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260428'
@@ -135,6 +136,7 @@ let settingsWindow: BrowserWindow | null = null
 const auditStore = new AuditStore()
 const knowledgeStore = new KnowledgeStore()
 const intentRoutingStore = new IntentRoutingStore()
+const channelAdapterStore = new ChannelAdapterStore()
 
 function createWindow(): void {
   // Create the browser window.
@@ -615,6 +617,31 @@ app.whenReady().then(async () => {
       return { success: true, result: intentRoutingStore.preview(args.context, args.settings) }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
+      return { success: false, error: message }
+    }
+  })
+
+  ipcMain.handle('channelAdapter:get', async (_event, appType: AppType) => {
+    return channelAdapterStore.get(coerceAppType(appType))
+  })
+
+  ipcMain.handle('channelAdapter:save', async (_event, settings) => {
+    try {
+      const saved = channelAdapterStore.save(settings)
+      auditStore.record({
+        category: 'layout',
+        action: saved.multiSessionEnabled ? 'layout.multisession_enabled' : 'layout.single_session_enabled',
+        metadata: saved
+      })
+      return { success: true, settings: saved }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      auditStore.record({
+        category: 'layout',
+        action: 'layout.invalid_adapter_fallback',
+        severity: 'warn',
+        message
+      })
       return { success: false, error: message }
     }
   })
