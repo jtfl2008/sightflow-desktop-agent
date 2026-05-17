@@ -181,6 +181,11 @@ async function testJsonAndMarkdownExportAreRedacted(): Promise<void> {
   }
   assert.equal(json.fileName, 'vision-replay-safe.json')
   assert.equal(markdown.fileName, 'vision-replay-safe.md')
+  assert.equal(json.redactionExportSummary.status, 'blocked')
+  assert.ok(json.redactionExportSummary.blockedTypes.includes('plaintext_contact'))
+  assert.ok(json.redactionExportSummary.blockedTypes.includes('secrets'))
+  assert.equal(json.redactionExportSummary.unknownFieldCount, 0)
+  assert.ok(json.content.includes('redactionExportSummary'))
 }
 
 async function testBlockedPrivacyGateCannotExport(): Promise<void> {
@@ -200,10 +205,10 @@ function testStandaloneSanitizerStripsForbiddenFields(): void {
   const sanitized = sanitizeForExport({
     contactName: 'Alice',
     fullChat: 'complete transcript',
+    email: 'alice@example.com',
+    phone: '+8613800138000',
     nested: {
       path: '/workspace/project/private/raw.png',
-      email: 'alice@example.com',
-      phone: '+8613800138000',
       secret: 'Bearer abc.def',
       imageBase64: 'data:image/png;base64,AAAA'
     }
@@ -219,6 +224,10 @@ function testStandaloneSanitizerStripsForbiddenFields(): void {
   assert.ok(sanitized.redactionSummary.contactNames > 0)
   assert.ok(sanitized.redactionSummary.emails > 0)
   assert.ok(sanitized.redactionSummary.phones > 0)
+  assert.equal(sanitized.redactionExportSummary.status, 'blocked')
+  assert.equal(sanitized.redactionExportSummary.unknownFieldCount, 1)
+  assert.ok(sanitized.redactionExportSummary.blockedTypes.includes('unknown_nested_object'))
+  assert.ok(sanitized.redactionExportSummary.omittedFieldPaths.includes('nested'))
 }
 
 async function main(): Promise<void> {

@@ -2,6 +2,7 @@ import { AuditStore } from './audit-store'
 import type { AuditSeverity } from './audit-types'
 import type { InstalledProviderInfo, ProviderBundleManifest } from './provider-bundle'
 import type { ProviderProductionTrustDecision } from './provider-security/provider-production-gate'
+import type { RedactionExportSummary } from '../core/redaction-export-summary'
 
 export type ProviderLifecycleAction = 'provider_install' | 'provider_update' | 'provider_rollback'
 
@@ -43,9 +44,43 @@ export function recordProviderLifecycleAudit(
       artifactHashes: input.gate?.artifactHashes || {},
       signatureStatus: input.gate?.signatureStatus,
       error: redactSensitiveProviderText(input.error),
-      redaction: 'provider lifecycle audit excludes provider config values and bundle contents'
+      redaction: 'provider lifecycle audit excludes provider config values and bundle contents',
+      redactionExportSummary: buildProviderLifecycleRedactionSummary(input)
     }
   })
+}
+
+function buildProviderLifecycleRedactionSummary(input: ProviderLifecycleAuditInput): RedactionExportSummary {
+  const omittedFieldPaths = new Set<string>()
+  const blockedTypes = new Set<RedactionExportSummary['blockedTypes'][number]>()
+  if (input.manifest?.configSchema) {
+    omittedFieldPaths.add('manifest.configSchema')
+    blockedTypes.add('provider_config_values')
+  }
+  if (input.installed?.entryFile) {
+    omittedFieldPaths.add('installed.entryFile')
+    blockedTypes.add('secrets')
+  }
+  if (input.previousInstalled?.entryFile) {
+    omittedFieldPaths.add('previousInstalled.entryFile')
+    blockedTypes.add('secrets')
+  }
+  if (input.manifestUrl && input.manifestUrl !== redactProviderUrl(input.manifestUrl)) {
+    omittedFieldPaths.add('manifestUrl.search')
+    blockedTypes.add('secrets')
+  }
+  if (input.error && input.error !== redactSensitiveProviderText(input.error)) {
+    omittedFieldPaths.add('error')
+    blockedTypes.add('secrets')
+  }
+  const sortedBlockedTypes = Array.from(blockedTypes).sort()
+  return {
+    status: sortedBlockedTypes.length ? 'blocked' : 'passed',
+    blockedTypes: sortedBlockedTypes,
+    omittedFieldPaths: Array.from(omittedFieldPaths).sort(),
+    unknownFieldCount: 0,
+    checkedAt: new Date().toISOString()
+  }
 }
 
 function redactProviderUrl(value: string | undefined): string | undefined {

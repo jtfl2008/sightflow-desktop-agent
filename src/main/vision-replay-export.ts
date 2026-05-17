@@ -10,6 +10,7 @@ import type {
   VisionReplayExportResult,
   VisionReplaySamplePreview
 } from '../core/rpa/vision-replay-ui-types'
+import type { RedactionExportBlockedType, RedactionExportSummary } from '../core/redaction-export-summary'
 import type { VisionReplayStore } from './vision-replay-store'
 
 interface RedactedVisionReplayExportData {
@@ -56,6 +57,7 @@ interface RedactedVisionReplayExportData {
     metadata: VisionReplaySamplePreview['metadata']
   }
   redactionSummary: VisionRedactionSummary
+  redactionExportSummary: RedactionExportSummary
 }
 
 const DEFAULT_REDACTION_SUMMARY: VisionRedactionSummary = {
@@ -78,6 +80,22 @@ const PATH_PATTERN = /(?:[A-Za-z]:\\|\/(?:Users|home|workspace|tmp|var|private)\
 const IMAGE_DATA_URI_PATTERN = /data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\r\n]+/gi
 const LONG_BASE64_PATTERN = /\b[A-Za-z0-9+/]{2000,}={0,2}\b/g
 
+const ALLOWED_NESTED_OBJECT_PATHS = new Set([
+  '',
+  'report',
+  'report.failureCategoryCounts',
+  'privacyGate',
+  'privacyGate.checks[]',
+  'failureCategories[]',
+  'selectedSample',
+  'selectedSample.imagePreview',
+  'selectedSample.metrics[]',
+  'selectedSample.overlays[]',
+  'selectedSample.metadata',
+  'redactionSummary',
+  'redactionExportSummary'
+])
+
 export async function exportRedactedVisionReplayReport(
   store: VisionReplayStore,
   request: VisionReplayExportRedactedReportRequest,
@@ -93,7 +111,7 @@ export async function exportRedactedVisionReplayReport(
     ...detail.privacyGate.redactionSummary
   }
   const data = buildExportData(detail, request.includeFailureDetails, baseSummary, now)
-  const sanitized = sanitizeForExport(data, { ...baseSummary })
+  const sanitized = sanitizeForExport(data, { ...baseSummary }, now)
   const content =
     request.format === 'json'
       ? `${JSON.stringify(sanitized.value, null, 2)}\n`
@@ -104,17 +122,31 @@ export async function exportRedactedVisionReplayReport(
     exportId: createExportId(detail.report.reportId, request.format, now()),
     fileName: `vision-replay-${safeFileName(detail.report.reportId)}.${request.format === 'json' ? 'json' : 'md'}`,
     content,
-    redactionSummary: sanitized.redactionSummary
+    redactionSummary: sanitized.redactionSummary,
+    redactionExportSummary: sanitized.redactionExportSummary
   }
 }
 
 export function sanitizeForExport<T>(
   value: T,
-  redactionSummary: VisionRedactionSummary = { ...DEFAULT_REDACTION_SUMMARY }
-): { value: T; redactionSummary: VisionRedactionSummary } {
+  redactionSummary: VisionRedactionSummary = { ...DEFAULT_REDACTION_SUMMARY },
+  now: () => Date = () => new Date()
+): { value: T; redactionSummary: VisionRedactionSummary; redactionExportSummary: RedactionExportSummary } {
+  const state: VisionExportRedactionState = {
+    redactionSummary,
+    blockedTypes: new Set(),
+    omittedFieldPaths: new Set(),
+    unknownFieldCount: 0
+  }
+  const sanitizedValue = sanitizeValue(value, state, '', 0) as T
+  const redactionExportSummary = buildVisionExportSummary(state, now)
+  if (isRecord(sanitizedValue)) {
+    ;(sanitizedValue as Record<string, unknown>).redactionExportSummary = redactionExportSummary
+  }
   return {
-    value: sanitizeValue(value, redactionSummary) as T,
-    redactionSummary
+    value: sanitizedValue,
+    redactionSummary,
+    redactionExportSummary
   }
 }
 
@@ -153,7 +185,8 @@ function buildExportData(
     },
     failureCategories: includeFailureDetails ? detail.failureCategories : [],
     selectedSample: detail.selectedSample ? safeSample(detail.selectedSample) : undefined,
-    redactionSummary
+    redactionSummary,
+    redactionExportSummary: emptyVisionExportSummary(now)
   }
 }
 
@@ -180,50 +213,78 @@ function safeSample(sample: VisionReplaySamplePreview): RedactedVisionReplayExpo
   }
 }
 
-function sanitizeValue(value: unknown, summary: VisionRedactionSummary, depth = 0): unknown {
+interface VisionExportRedactionState {
+  redactionSummary: VisionRedactionSummary
+  blockedTypes: Set<RedactionExportBlockedType>
+  omittedFieldPaths: Set<string>
+  unknownFieldCount: number
+}
+
+function sanitizeValue(
+  value: unknown,
+  state: VisionExportRedactionState,
+  path: string,
+  depth = 0
+): unknown {
   if (depth > 12) return '[REDACTED_MAX_DEPTH]'
   if (value === null || value === undefined) return value
-  if (typeof value === 'string') return sanitizeString(value, summary)
+  if (typeof value === 'string') return sanitizeString(value, state, path)
   if (typeof value === 'number' || typeof value === 'boolean') return value
-  if (Array.isArray(value)) return value.map((item) => sanitizeValue(item, summary, depth + 1))
+  if (Array.isArray(value)) {
+    return value.map((item, index) => sanitizeValue(item, state, `${path}[${index}]`, depth + 1))
+  }
   if (typeof value !== 'object') return String(value)
+
+  if (!ALLOWED_NESTED_OBJECT_PATHS.has(normalizeObjectPath(path))) {
+    state.unknownFieldCount += 1
+    addBlocked(state, 'unknown_nested_object', path || '$')
+    return undefined
+  }
 
   const out: Record<string, unknown> = {}
   for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+    const childPath = path ? `${path}.${key}` : key
     if (isForbiddenKey(key)) {
-      out[key] = '[REDACTED]'
-      increment(summary, key)
+      addBlocked(state, blockedTypeForKey(key), childPath)
+      increment(state.redactionSummary, key)
     } else {
-      out[key] = sanitizeValue(child, summary, depth + 1)
+      const sanitized = sanitizeValue(child, state, childPath, depth + 1)
+      if (sanitized !== undefined) out[key] = sanitized
     }
   }
   return out
 }
 
-function sanitizeString(value: string, summary: VisionRedactionSummary): string {
+function sanitizeString(value: string, state: VisionExportRedactionState, path: string): string {
   return value
     .replace(IMAGE_DATA_URI_PATTERN, () => {
-      summary.avatars += 1
+      state.redactionSummary.avatars += 1
+      addBlocked(state, 'base64', path)
       return '[REDACTED_IMAGE_BASE64]'
     })
     .replace(LONG_BASE64_PATTERN, () => {
-      summary.otherPii += 1
+      state.redactionSummary.otherPii += 1
+      addBlocked(state, 'base64', path)
       return '[REDACTED_BASE64]'
     })
     .replace(EMAIL_PATTERN, () => {
-      summary.emails += 1
+      state.redactionSummary.emails += 1
+      addBlocked(state, 'plaintext_contact', path)
       return '[REDACTED_EMAIL]'
     })
     .replace(PHONE_PATTERN, () => {
-      summary.phones += 1
+      state.redactionSummary.phones += 1
+      addBlocked(state, 'plaintext_contact', path)
       return '[REDACTED_PHONE]'
     })
     .replace(SECRET_PATTERN, () => {
-      summary.otherPii += 1
+      state.redactionSummary.otherPii += 1
+      addBlocked(state, 'secrets', path)
       return '[REDACTED_SECRET]'
     })
     .replace(PATH_PATTERN, () => {
-      summary.otherPii += 1
+      state.redactionSummary.otherPii += 1
+      addBlocked(state, 'secrets', path)
       return '[REDACTED_PATH]'
     })
 }
@@ -240,6 +301,52 @@ function increment(summary: VisionRedactionSummary, key: string): void {
   else if (/chat/i.test(key)) summary.chatMessages += 1
   else if (/contact|displayName/i.test(key)) summary.contactNames += 1
   else summary.otherPii += 1
+}
+
+function blockedTypeForKey(key: string): RedactionExportBlockedType {
+  if (/(raw|full).*screenshot|screenshot.*(raw|full)|imageBytes/i.test(key)) return 'raw_screenshot'
+  if (/base64/i.test(key)) return 'base64'
+  if (/fullChat|chatTranscript/i.test(key)) return 'full_chat'
+  if (/contactName|displayName|avatar|qrCode/i.test(key)) return 'plaintext_contact'
+  if (/token|secret|apiKey|password/i.test(key)) return 'secrets'
+  return 'secrets'
+}
+
+function addBlocked(
+  state: VisionExportRedactionState,
+  type: RedactionExportBlockedType,
+  path: string
+): void {
+  state.blockedTypes.add(type)
+  state.omittedFieldPaths.add(path)
+}
+
+function buildVisionExportSummary(
+  state: VisionExportRedactionState,
+  now: () => Date
+): RedactionExportSummary {
+  const blockedTypes = Array.from(state.blockedTypes).sort()
+  return {
+    status: blockedTypes.length > 0 || state.unknownFieldCount > 0 ? 'blocked' : 'passed',
+    blockedTypes,
+    omittedFieldPaths: Array.from(state.omittedFieldPaths).sort(),
+    unknownFieldCount: state.unknownFieldCount,
+    checkedAt: now().toISOString()
+  }
+}
+
+function emptyVisionExportSummary(now: () => Date): RedactionExportSummary {
+  return {
+    status: 'passed',
+    blockedTypes: [],
+    omittedFieldPaths: [],
+    unknownFieldCount: 0,
+    checkedAt: now().toISOString()
+  }
+}
+
+function normalizeObjectPath(path: string): string {
+  return path.replace(/\[\d+\]/g, '[]')
 }
 
 function renderMarkdown(data: RedactedVisionReplayExportData): string {
@@ -311,4 +418,8 @@ function createExportId(reportId: string, format: string, now: Date): string {
 
 function safeFileName(value: string): string {
   return value.replace(/[^a-zA-Z0-9_.-]/g, '_').slice(0, 80) || 'report'
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }

@@ -1,5 +1,6 @@
 import { AuditExport, AuditRecord } from './audit-types'
 import type { RedactionExportBlockedType, RedactionExportSummary } from '../core/redaction-export-summary'
+import { isDiagnosticsContactHash } from '../core/diagnostics/diagnostics-contact-hash'
 
 export type AuditExportBlockedType = RedactionExportBlockedType
 export type AuditExportRedactionSummary = RedactionExportSummary
@@ -222,6 +223,10 @@ function redactCustomerProfile(
     if (key === 'sourceSummary') {
       const redacted = redactCustomerProfileSourceSummary(child, childPath, state)
       if (redacted !== undefined) out[key] = redacted
+      continue
+    }
+    if (key === 'contactKeyHash' && typeof child === 'string' && !isDiagnosticsContactHash(child)) {
+      addBlocked(state, 'plaintext_contact', childPath)
       continue
     }
 

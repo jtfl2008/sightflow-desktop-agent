@@ -79,6 +79,7 @@ function testProviderLifecycleAuditRedaction(): void {
   )
 
   const exported = store.exportJson()
+  const parsed = JSON.parse(exported)
   assert.equal(exported.includes('should-not-export'), false)
   assert.equal(exported.includes('super-secret-token'), false)
   assert.equal(exported.includes('/private/provider.bundle.js'), false)
@@ -87,6 +88,19 @@ function testProviderLifecycleAuditRedaction(): void {
   assert.equal(exported.includes('provider_rollback'), true)
   assert.equal(exported.includes('trusted_signed'), true)
   assert.equal(exported.includes('provider.bundle.js'), true)
+  assert.ok(
+    parsed.records.every((record: any) => record.metadata.redactionExportSummary.status === 'blocked')
+  )
+  assert.ok(
+    parsed.records.every((record: any) =>
+      record.metadata.redactionExportSummary.blockedTypes.includes('provider_config_values')
+    )
+  )
+  assert.ok(
+    parsed.records.some((record: any) =>
+      record.metadata.redactionExportSummary.omittedFieldPaths.includes('manifestUrl.search')
+    )
+  )
 }
 
 function main(): void {

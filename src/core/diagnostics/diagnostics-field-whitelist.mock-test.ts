@@ -13,6 +13,7 @@ const memory = whitelistDiagnosticsNodeDetail('customer_memory', {
 
 assert.equal(memory.type, 'customer_memory')
 assert.equal(memory.profileId, 'p1')
+assert.equal(memory.contactKeyHash, 'ch_abcdef12')
 assert.deepEqual(memory.injectedFieldPaths, ['preference.color'])
 assert.equal('customerProfile' in memory, false)
 assert.equal('displayName' in memory, false)
@@ -33,5 +34,17 @@ assert.equal(provider.providerId, 'signed_local')
 assert.equal('providerConfig' in provider, false)
 assert.equal('webhookBody' in provider, false)
 assert.equal('screenshot' in provider, false)
+
+const invalidMemoryHash = whitelistDiagnosticsNodeDetail('customer_memory', {
+  contactKeyHash: 'Alice Smith'
+})
+assert.equal(invalidMemoryHash.type, 'customer_memory')
+assert.equal(invalidMemoryHash.contactKeyHash, undefined)
+
+const invalidVisionHash = whitelistDiagnosticsNodeDetail('vision', {
+  sampleIdHash: 'sample from Alice'
+})
+assert.equal(invalidVisionHash.type, 'vision')
+assert.equal(invalidVisionHash.sampleIdHash, undefined)
 
 console.log('diagnostics-field-whitelist mock tests passed')

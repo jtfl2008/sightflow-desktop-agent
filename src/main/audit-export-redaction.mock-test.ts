@@ -277,6 +277,41 @@ function testRawBackendCustomerProfileScalarExportRedaction(): void {
   )
 }
 
+function testCustomerProfileContactKeyHashShapeRedaction(): void {
+  const store = new AuditStore({
+    backend: new MemoryAuditBackend([
+      {
+        id: 'bad-contact-key-hash',
+        category: 'provider',
+        action: 'customer_profile.injected',
+        severity: 'info',
+        occurredAt: fixedNow().toISOString(),
+        metadata: {
+          customerProfile: {
+            profileId: 'p5',
+            contactKeyHash: 'Alice Smith',
+            injectedFieldPaths: ['preferenceNotes']
+          }
+        }
+      }
+    ]),
+    now: fixedNow
+  })
+
+  const json = store.exportJson()
+  const parsed = JSON.parse(json)
+
+  assert.equal(json.includes('Alice Smith'), false)
+  assert.equal(parsed.records[0].metadata.customerProfile.contactKeyHash, undefined)
+  assert.equal(parsed.redaction.status, 'blocked')
+  assert.ok(parsed.redaction.blockedTypes.includes('plaintext_contact'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.customerProfile.contactKeyHash'
+    )
+  )
+}
+
 function testUnknownNestedExportObjectBlocksRecords(): void {
   const store = new AuditStore({ backend: new MemoryAuditBackend(), now: fixedNow })
   store.record({
@@ -310,6 +345,7 @@ function main(): void {
   testForbiddenContentReturnsExportSummary()
   testRawBackendSourceSummaryExportRedaction()
   testRawBackendCustomerProfileScalarExportRedaction()
+  testCustomerProfileContactKeyHashShapeRedaction()
   testUnknownNestedExportObjectBlocksRecords()
   console.log('audit export redaction mock tests passed')
 }

@@ -91,7 +91,7 @@ export function toDiagnosticsRecordView(
   const topErrorCode = inferTopErrorCode(record.raw)
   const redaction = withContactHashRedaction(
     checkDiagnosticsRedaction(record.raw, { now }),
-    contactHashCandidate
+    collectHashShapeCandidates(record.raw, contactHashCandidate)
   )
   const isRedactionBlocked = redaction.status === 'blocked' || redaction.unknownFieldCount > 0
   const timeline = isRedactionBlocked
@@ -122,9 +122,12 @@ export function toDiagnosticsRecordView(
 
 function withContactHashRedaction(
   redaction: DiagnosticsRedactionSummary,
-  contactHashCandidate?: string
+  hashCandidates: Array<{ path: string; value?: string }>
 ): DiagnosticsRedactionSummary {
-  if (!contactHashCandidate || isDiagnosticsContactHash(contactHashCandidate)) return redaction
+  const invalidPaths = hashCandidates
+    .filter((candidate) => candidate.value && !isDiagnosticsContactHash(candidate.value))
+    .map((candidate) => candidate.path)
+  if (!invalidPaths.length) return redaction
   const blockedTypes: DiagnosticsRedactionSummary['blockedTypes'] = Array.from(
     new Set([...redaction.blockedTypes, 'plaintext_contact'])
   ).sort() as DiagnosticsRedactionSummary['blockedTypes']
@@ -132,8 +135,28 @@ function withContactHashRedaction(
     ...redaction,
     status: 'blocked',
     blockedTypes,
-    omittedFieldPaths: Array.from(new Set([...redaction.omittedFieldPaths, 'contactHash'])).sort()
+    omittedFieldPaths: Array.from(new Set([...redaction.omittedFieldPaths, ...invalidPaths])).sort()
   }
+}
+
+function collectHashShapeCandidates(
+  raw: Record<string, unknown>,
+  contactHashCandidate?: string
+): Array<{ path: string; value?: string }> {
+  return [
+    { path: 'contactHash', value: contactHashCandidate },
+    { path: 'contactKeyHash', value: stringAt(raw, ['contactKeyHash']) },
+    { path: 'metadata.contactKeyHash', value: stringAt(raw, ['metadata.contactKeyHash']) },
+    {
+      path: 'metadata.customerProfile.contactKeyHash',
+      value: stringAt(raw, ['metadata.customerProfile.contactKeyHash'])
+    },
+    {
+      path: 'metadata.channelContext.contactKeyHash',
+      value: stringAt(raw, ['metadata.channelContext.contactKeyHash'])
+    },
+    { path: 'sampleIdHash', value: stringAt(raw, ['sampleIdHash', 'metadata.sampleIdHash']) }
+  ]
 }
 
 function buildBlockedTimelineNode(
