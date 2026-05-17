@@ -33,6 +33,7 @@ import {
   stopSkillServer
 } from './skill-server'
 import { AuditStore } from './audit-store'
+import { KnowledgeStore } from './knowledge-store'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
 const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260428'
@@ -131,6 +132,7 @@ let runtime: RuntimeHost<ReturnType<typeof createInitialGenericChannelState>> | 
 let runtimeDevice: DesktopDevice | null = null
 let settingsWindow: BrowserWindow | null = null
 const auditStore = new AuditStore()
+const knowledgeStore = new KnowledgeStore()
 
 function createWindow(): void {
   // Create the browser window.
@@ -561,6 +563,32 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('audit:exportMarkdown', async (_event, limit?: number) => {
     return auditStore.exportMarkdown(typeof limit === 'number' ? limit : undefined)
+  })
+
+  ipcMain.handle('knowledge:list', async () => {
+    return knowledgeStore.list()
+  })
+
+  ipcMain.handle('knowledge:save', async (_event, entry) => {
+    try {
+      return { success: true, entry: knowledgeStore.save(entry) }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      return { success: false, error: message }
+    }
+  })
+
+  ipcMain.handle('knowledge:delete', async (_event, id: string) => {
+    knowledgeStore.delete(id)
+    return { success: true }
+  })
+
+  ipcMain.handle('knowledge:toggle', async (_event, args: { id: string; enabled: boolean }) => {
+    return { success: true, entry: knowledgeStore.toggle(args.id, args.enabled) }
+  })
+
+  ipcMain.handle('knowledge:preview', async (_event, query: string) => {
+    return knowledgeStore.preview(query || '')
   })
 
   ipcMain.handle('review:listDrafts', async () => {

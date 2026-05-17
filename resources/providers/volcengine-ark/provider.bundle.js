@@ -40,7 +40,8 @@ export function createProvider(context) {
           screenshot: input.screenshot,
           apiKey,
           model: providerConfig.model || DEFAULT_MODEL,
-          systemPrompt: providerConfig.systemPrompt || DEFAULT_PROMPT
+          systemPrompt: providerConfig.systemPrompt || DEFAULT_PROMPT,
+          input
         })
 
         if (!reply || reply.trim() === '[SKIP]') {
@@ -60,7 +61,7 @@ export function createProvider(context) {
   }
 }
 
-async function requestReply({ screenshot, apiKey, model, systemPrompt }) {
+async function requestReply({ screenshot, apiKey, model, systemPrompt, input }) {
   const body = {
     model,
     messages: [
@@ -69,7 +70,7 @@ async function requestReply({ screenshot, apiKey, model, systemPrompt }) {
         role: 'user',
         content: [
           { type: 'image_url', image_url: { url: normalizeImageUrl(screenshot) } },
-          { type: 'text', text: '请根据截图中微信聊天窗口的最新消息进行回复。' }
+          { type: 'text', text: buildUserPrompt(input) }
         ]
       }
     ],
@@ -94,6 +95,18 @@ async function requestReply({ screenshot, apiKey, model, systemPrompt }) {
   return json && json.choices && json.choices[0] && json.choices[0].message
     ? json.choices[0].message.content || ''
     : ''
+}
+
+function buildUserPrompt(input) {
+  const snippets = Array.isArray(input.knowledgeSnippets) ? input.knowledgeSnippets : []
+  const hints = Array.isArray(input.policyHints) ? input.policyHints : []
+  const knowledgeText = snippets.length
+    ? `\n\n可参考的本地知识库片段：\n${snippets
+        .map((item, index) => `${index + 1}. ${item.title}（${item.sourceType}）：${item.content}`)
+        .join('\n')}`
+    : ''
+  const policyText = hints.length ? `\n\n安全策略提示：\n${hints.map((item) => `- ${item}`).join('\n')}` : ''
+  return `请根据截图中微信聊天窗口的最新消息进行回复。${knowledgeText}${policyText}`
 }
 
 function normalizeImageUrl(screenshot) {

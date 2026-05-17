@@ -105,10 +105,20 @@ interface ProviderInput {
   appType: 'wechat' | 'wework'
   currentContact?: string
   ocrText?: string
+  knowledgeSnippets?: Array<{
+    id: string
+    title: string
+    content: string
+    sourceType: 'manual' | 'faq' | 'doc' | 'url' | string
+    score?: number
+  }>
+  policyHints?: string[]
 }
 ```
 
 其中 `screenshot` 是 `data:image/...;base64,...` 格式的截图字符串。Provider 如果调用 OpenAI 兼容视觉接口，通常可以直接把它作为 `image_url.url` 传入；如果目标 API 只接受裸 base64，需要自行去掉 `base64,` 前缀。
+
+`knowledgeSnippets` 是本地轻量知识库检索命中的启用条目片段；禁用条目不会进入 ProviderInput。宿主会限制片段数量，Provider 应把它们作为参考材料，而不是覆盖截图中的最新对话事实。`policyHints` 是策略层提示，Provider 应避免生成会触发阻断或强制审核的内容。
 
 Provider 可以返回的事件：
 

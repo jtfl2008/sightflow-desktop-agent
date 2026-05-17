@@ -5,6 +5,14 @@ export interface ProviderInput {
   appType: AppType
   currentContact?: string
   ocrText?: string
+  knowledgeSnippets?: Array<{
+    id: string
+    title: string
+    content: string
+    sourceType: string
+    score?: number
+  }>
+  policyHints?: string[]
 }
 
 export type ProviderEvent =
