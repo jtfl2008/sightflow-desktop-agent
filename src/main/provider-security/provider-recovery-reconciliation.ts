@@ -52,7 +52,8 @@ export interface ProviderRecoveryReconciliationOptions<TSettings extends Provide
   ): Promise<LoadedRecoveryCandidate | null>
   evaluateInstalledProviderGate?(
     installed: InstalledProviderInfo,
-    manifest: ProviderBundleManifest
+    manifest: ProviderBundleManifest,
+    sourceUrl?: string
   ): Promise<ProviderProductionTrustDecision>
   trustedPublishers?: TrustedPublisherRecord[]
   now?: () => Date
@@ -172,6 +173,7 @@ export async function reconcileProviderLifecycleWithSettings<TSettings extends P
         manifest: settingsCandidate.manifest,
         gate: settingsGate,
         manifestPath: settingsCandidate.manifestPath,
+        sourceUrl: settingsCandidate.sourceUrl,
         activatedAt: checkedAt
       })
       recordProviderRecoveryReconciliationAudit(options.auditStore, {
@@ -310,7 +312,8 @@ async function loadLifecycleCandidate<TSettings extends ProviderRecoverySettings
   version: string,
   record: Partial<ProviderInstalledVersionRecord>
 ): Promise<LoadedRecoveryCandidate | null> {
-  return (await options.loadLifecycleInstalledProvider?.(providerId, version, record)) ?? null
+  const candidate = (await options.loadLifecycleInstalledProvider?.(providerId, version, record)) ?? null
+  return candidate ? { ...candidate, sourceUrl: candidate.sourceUrl || record.sourceUrl } : null
 }
 
 async function evaluateCandidateGate<TSettings extends ProviderRecoverySettings>(

@@ -221,10 +221,10 @@ async function runCase(item: RecoveryFixtureCase): Promise<void> {
         manifestPath: `providers/${providerId}/${version}/manifest.json`
       }
     },
-    evaluateInstalledProviderGate: async (candidate, manifest) =>
+    evaluateInstalledProviderGate: async (candidate, manifest, sourceUrl) =>
       evaluateProviderProductionGate({
         manifest,
-        sourceUrl: 'https://fixtures.local/manifest.json',
+        sourceUrl: sourceUrl || settingsStore.store.chatProvider.manifestUrl || 'https://fixtures.local/manifest.json',
         trustedPublishers: [trustedPublisher, revokedPublisher],
         artifactContentByPath: {
           'provider.bundle.js': candidate.id === 'hash-mismatch-provider' ? 'tampered' : bundle

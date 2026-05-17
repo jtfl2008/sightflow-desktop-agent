@@ -1380,12 +1380,15 @@ async function handleProviderLifecycleRequest(request: ProviderLifecycleRequest)
     try {
       const manifest = await getInstalledProviderManifest(previousInstalled)
       if (!manifest) throw new Error('未找到可回滚 Provider 的配置清单')
-      const productionGate = await evaluateInstalledProviderGate(previousInstalled, manifest)
+      const previousRecord =
+        providerLifecycleStore.getState().versionsByProviderId[previousInstalled.id]?.[previousInstalled.version]
+      const productionGate = await evaluateInstalledProviderGate(previousInstalled, manifest, previousRecord?.sourceUrl)
       const lifecycle = providerLifecycleStore.rollback({
         installed: previousInstalled,
         manifest,
         gate: productionGate,
-        manifestPath: relativeProviderManifestPath(previousInstalled)
+        manifestPath: relativeProviderManifestPath(previousInstalled),
+        sourceUrl: previousRecord?.sourceUrl
       })
       if (!lifecycle.ok) {
         throw new Error(`Provider rollback denied: ${lifecycle.reasonCodes.join(', ')}`)
@@ -1428,7 +1431,8 @@ async function handleProviderLifecycleRequest(request: ProviderLifecycleRequest)
       installed: result.installed,
       manifest: result.manifest,
       gate: result.productionGate,
-      manifestPath: relativeProviderManifestPath(result.installed)
+      manifestPath: relativeProviderManifestPath(result.installed),
+      sourceUrl: manifestUrl
     })
     if (!lifecycle.ok) {
       throw new Error(`Provider lifecycle pointer denied: ${lifecycle.reasonCodes.join(', ')}`)
@@ -1474,7 +1478,8 @@ async function handleProviderLifecycleRequest(request: ProviderLifecycleRequest)
 
 async function evaluateInstalledProviderGate(
   installed: InstalledProviderInfo,
-  manifest: NonNullable<Awaited<ReturnType<typeof getInstalledProviderManifest>>>
+  manifest: NonNullable<Awaited<ReturnType<typeof getInstalledProviderManifest>>>,
+  sourceUrl?: string
 ) {
   const installDir = dirname(installed.entryFile)
   const artifactPaths = new Set<string>((manifest.artifacts || []).map((artifact) => artifact.path))
@@ -1492,7 +1497,7 @@ async function evaluateInstalledProviderGate(
   }
   return evaluateProviderProductionGate({
     manifest,
-    sourceUrl: pathToFileURL(join(installDir, 'manifest.json')).toString(),
+    sourceUrl: sourceUrl || pathToFileURL(join(installDir, 'manifest.json')).toString(),
     trustedPublishers: getTrustedPublishersFromEnv(),
     artifactContentByPath
   })

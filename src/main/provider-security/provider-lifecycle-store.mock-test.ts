@@ -105,6 +105,7 @@ function candidate(version: string, content = bundle(version)): ProviderLifecycl
     installed: installed(version),
     manifest: secureManifest as ProviderBundleManifest,
     manifestPath: `providers/official-provider/${version}/manifest.json`,
+    sourceUrl: 'https://providers.example/manifest.json',
     gate: evaluateProviderProductionGate({
       manifest: secureManifest,
       sourceUrl: 'https://providers.example/manifest.json',
@@ -174,6 +175,7 @@ function testRollbackRequiresHistoricalMetadataAndGate(): void {
             providerId: 'official-provider',
             version: '2.0.0',
             manifestPath: 'providers/official-provider/2.0.0/manifest.json',
+            sourceUrl: 'https://providers.example/manifest.json',
             artifactHashes: { 'provider.bundle.js': sha256Hex(bundle('2.0.0')) },
             trustLevel: 'trusted_signed',
             lifecycleState: 'active'
@@ -182,6 +184,7 @@ function testRollbackRequiresHistoricalMetadataAndGate(): void {
             providerId: 'official-provider',
             version: '1.0.0',
             manifestPath: 'providers/official-provider/1.0.0/manifest.json',
+            sourceUrl: 'https://providers.example/manifest.json',
             trustLevel: 'trusted_signed',
             lifecycleState: 'previous'
           }
