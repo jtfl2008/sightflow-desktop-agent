@@ -182,17 +182,25 @@ function sanitizeRecoverySummary(
   value: ProviderRecoverySafeSummary | undefined
 ): ProviderRecoverySafeSummary | undefined {
   if (!value) return undefined
-  return {
-    providerId: safeScalar(value.providerId),
-    version: safeScalar(value.version),
-    trustLevel: value.trustLevel,
-    productionInstallAllowed: value.productionInstallAllowed,
-    hasSettingsInstalled: value.hasSettingsInstalled,
-    hasLifecyclePointer: value.hasLifecyclePointer,
-    hasPreviousPointer: value.hasPreviousPointer,
-    manifestUrlOrigin: safeOrigin(value.manifestUrlOrigin),
-    manifestUrlHasRedactedQuery: value.manifestUrlHasRedactedQuery
-  }
+  const out: ProviderRecoverySafeSummary = {}
+  setIfDefined(out, 'providerId', safeScalar(value.providerId))
+  setIfDefined(out, 'version', safeScalar(value.version))
+  setIfDefined(out, 'trustLevel', value.trustLevel)
+  setIfDefined(out, 'productionInstallAllowed', value.productionInstallAllowed)
+  setIfDefined(out, 'hasSettingsInstalled', value.hasSettingsInstalled)
+  setIfDefined(out, 'hasLifecyclePointer', value.hasLifecyclePointer)
+  setIfDefined(out, 'hasPreviousPointer', value.hasPreviousPointer)
+  setIfDefined(out, 'manifestUrlOrigin', safeOrigin(value.manifestUrlOrigin))
+  setIfDefined(out, 'manifestUrlHasRedactedQuery', value.manifestUrlHasRedactedQuery)
+  return out
+}
+
+function setIfDefined<K extends keyof ProviderRecoverySafeSummary>(
+  target: ProviderRecoverySafeSummary,
+  key: K,
+  value: ProviderRecoverySafeSummary[K] | undefined
+): void {
+  if (value !== undefined) target[key] = value
 }
 
 function safeOrigin(value: string | undefined): string | undefined {

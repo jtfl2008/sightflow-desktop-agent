@@ -294,6 +294,7 @@ function redactRecoverySafeSummary(
   const out: Record<string, unknown> = {}
   for (const [key, child] of Object.entries(value)) {
     const childPath = `${recordPath}.${key}`
+    if (child === undefined) continue
     if (!SAFE_RECOVERY_SUMMARY_KEYS.has(key)) {
       if (typeof child === 'string') sanitizeString(child, childPath, state)
       const blockedType = blockedTypeForPath(`metadata.${key}`)

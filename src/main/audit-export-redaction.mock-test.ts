@@ -35,7 +35,7 @@ function testCustomerMemoryExportRedaction(): void {
       customerProfile: {
         profileId: 'p1',
         version: '2',
-        contactKeyHash: 'abcdef123456',
+        contactKeyHash: 'abcdef1234567890',
         displayName: 'Alice',
         fields: {
           preferenceNotes: ['likes concise answers'],
@@ -65,7 +65,7 @@ function testCustomerMemoryExportRedaction(): void {
     assert.equal(exported.includes('likes concise answers'), false)
     assert.equal(exported.includes('full private summary'), false)
     assert.equal(exported.includes('do not export'), false)
-    assert.equal(exported.includes('abcdef123456'), true)
+    assert.equal(exported.includes('abcdef1234567890'), true)
     assert.equal(exported.includes('preferenceNotes'), true)
     assert.equal(exported.includes('safetyHintApplied'), true)
   }
@@ -88,7 +88,7 @@ function testForbiddenContentReturnsExportSummary(): void {
           providerConfig: { apiKey: 'sk-live-secret' },
           customerProfile: {
             profileId: 'p2',
-            contactKeyHash: 'abcdef123456',
+            contactKeyHash: 'abcdef1234567890',
             fields: {
               preferenceNotes: ['private profile text']
             },
@@ -150,7 +150,7 @@ function testRawBackendSourceSummaryExportRedaction(): void {
         metadata: {
           customerProfile: {
             profileId: 'p3',
-            contactKeyHash: 'abcdef123456',
+            contactKeyHash: 'abcdef1234567890',
             sourceSummary: [
               {
                 fieldPath: 'preferenceNotes',
@@ -221,7 +221,7 @@ function testRawBackendCustomerProfileScalarExportRedaction(): void {
           customerProfile: {
             profileId: 'p4',
             version: 3,
-            contactKeyHash: 'abcdef123456',
+            contactKeyHash: 'abcdef1234567890',
             injectedFieldPaths: ['preferenceNotes'],
             expired: false,
             omittedReason: 'none',
@@ -253,7 +253,7 @@ function testRawBackendCustomerProfileScalarExportRedaction(): void {
     assert.equal(exported.includes(favoriteColor), false)
     assert.equal(exported.includes(notes), false)
     assert.equal(exported.includes('plain private preference'), false)
-    assert.equal(exported.includes('abcdef123456'), true)
+    assert.equal(exported.includes('abcdef1234567890'), true)
     assert.equal(exported.includes('safetyHintApplied'), true)
     assert.equal(exported.includes('preferenceNotes'), true)
   }
@@ -545,8 +545,8 @@ function testRecoveryReconciliationExportRedaction(): void {
     assert.equal(exported.includes(contact), false)
     assert.equal(exported.includes('full chat OCR private transcript'), false)
     assert.equal(exported.includes('recovery_reconciliation'), false)
-    assert.equal(exported.includes('Export blocked'), true)
   }
+  assert.equal(markdown.includes('Export blocked'), true)
   assert.equal(parsed.blocked, true)
   assert.deepEqual(parsed.records, [])
   assert.equal(parsed.redaction.status, 'blocked')

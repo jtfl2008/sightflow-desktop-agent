@@ -97,7 +97,7 @@ function testRawBackendSourceSummaryExportRedaction(): void {
         metadata: {
           customerProfile: {
             profileId: 'p1',
-            contactKeyHash: 'abcdef123456',
+            contactKeyHash: 'abcdef1234567890',
             sourceSummary: [
               {
                 fieldPath: 'preferenceNotes',
@@ -145,7 +145,7 @@ function testRawBackendCustomerProfileScalarExportRedaction(): void {
         metadata: {
           customerProfile: {
             profileId: 'p2',
-            contactKeyHash: 'abcdef123456',
+            contactKeyHash: 'abcdef1234567890',
             injectedFieldPaths: ['preferenceNotes'],
             safetyHintApplied: true,
             favoriteColor,
@@ -173,8 +173,8 @@ function testRawBackendCustomerProfileScalarExportRedaction(): void {
   assert.equal(markdown.includes(favoriteColor), false)
   assert.equal(json.includes(preferenceNotes), false)
   assert.equal(markdown.includes(preferenceNotes), false)
-  assert.equal(json.includes('abcdef123456'), true)
-  assert.equal(markdown.includes('abcdef123456'), true)
+  assert.equal(json.includes('abcdef1234567890'), true)
+  assert.equal(markdown.includes('abcdef1234567890'), true)
   assert.equal(parsed.redaction.status, 'blocked')
   assert.equal(parsed.redaction.unknownFieldCount, 0)
   assert.ok(parsed.redaction.blockedTypes.includes('full_profile'))
