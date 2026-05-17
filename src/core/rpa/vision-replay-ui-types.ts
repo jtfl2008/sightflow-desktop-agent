@@ -97,6 +97,17 @@ export interface VisionReplayRunPrivacyGateResponse {
   gate: VisionImportPrivacyGateResult
 }
 
+export interface VisionReplayExportRedactedReportRequest {
+  reportId: string
+  format: 'markdown' | 'json'
+  includeFailureDetails: boolean
+}
+
+export interface VisionReplayExportRedactedReportResponse {
+  success: true
+  export: VisionReplayExportResult
+}
+
 export interface VisionReplaySamplePreview {
   sampleId: string
   suiteId: string

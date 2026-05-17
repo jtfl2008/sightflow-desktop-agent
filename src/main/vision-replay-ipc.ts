@@ -7,9 +7,12 @@ import type {
   VisionReplayListSamplesResponse,
   VisionReplayOpenReportRequest,
   VisionReplayOpenReportResponse,
+  VisionReplayExportRedactedReportRequest,
+  VisionReplayExportRedactedReportResponse,
   VisionReplayRunPrivacyGateRequest,
   VisionReplayRunPrivacyGateResponse
 } from '../core/rpa/vision-replay-ui-types'
+import { exportRedactedVisionReplayReport } from './vision-replay-export'
 
 export function registerVisionReplayIpc(ipcMain: IpcMain, store: VisionReplayStore): void {
   ipcMain.handle(
@@ -50,6 +53,19 @@ export function registerVisionReplayIpc(ipcMain: IpcMain, store: VisionReplaySto
       request: VisionReplayRunPrivacyGateRequest
     ): Promise<VisionReplayRunPrivacyGateResponse> => {
       return { success: true, gate: await store.runPrivacyGate(request) }
+    }
+  )
+
+  ipcMain.handle(
+    'visionEval:exportRedactedReport',
+    async (
+      _event,
+      request: VisionReplayExportRedactedReportRequest
+    ): Promise<VisionReplayExportRedactedReportResponse> => {
+      return {
+        success: true,
+        export: await exportRedactedVisionReplayReport(store, request)
+      }
     }
   )
 }
