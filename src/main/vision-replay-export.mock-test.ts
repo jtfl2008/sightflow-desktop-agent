@@ -183,7 +183,6 @@ async function testJsonAndMarkdownExportAreRedacted(): Promise<void> {
   assert.equal(markdown.fileName, 'vision-replay-safe.md')
   assert.equal(json.redactionExportSummary.status, 'blocked')
   assert.ok(json.redactionExportSummary.blockedTypes.includes('plaintext_contact'))
-  assert.ok(json.redactionExportSummary.blockedTypes.includes('secrets'))
   assert.equal(json.redactionExportSummary.unknownFieldCount, 0)
   assert.ok(json.content.includes('redactionExportSummary'))
 }

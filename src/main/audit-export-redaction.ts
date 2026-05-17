@@ -34,13 +34,15 @@ const LOCAL_PATH_PATTERN = /(?:\/Users\/|\/home\/|\/workspace\/|[A-Z]:\\)/i
 const ALLOWED_NESTED_OBJECT_PATHS = new Set([
   'metadata.artifactHashes',
   'metadata.channelContext',
-  'metadata.matchedKnowledge'
+  'metadata.matchedKnowledge',
+  'metadata.redactionExportSummary'
 ])
 
 const ALLOWED_NESTED_OBJECT_PREFIXES = [
   'metadata.artifactHashes.',
   'metadata.channelContext.',
-  'metadata.matchedKnowledge.'
+  'metadata.matchedKnowledge.',
+  'metadata.redactionExportSummary.'
 ]
 
 const CUSTOMER_PROFILE_SOURCE_SUMMARY_PATH = 'metadata.customerProfile.sourceSummary'
