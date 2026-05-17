@@ -62,6 +62,19 @@ const SAFE_SOURCE_SUMMARY_SCALAR_KEYS = new Set([
   'confirmedByUser',
   'auditId'
 ])
+const REDACTION_EXPORT_BLOCKED_TYPES = new Set<RedactionExportBlockedType>([
+  'raw_screenshot',
+  'base64',
+  'full_chat',
+  'plaintext_contact',
+  'full_profile',
+  'provider_config_values',
+  'webhook_body',
+  'secrets',
+  'unknown_nested_object'
+])
+const SAFE_OMITTED_FIELD_PATH_PATTERN = /^[A-Za-z0-9_$.[\]-]+$/
+const MAX_OMITTED_FIELD_PATH_LENGTH = 160
 
 export function buildRedactedAuditExport(
   value: AuditExport,
@@ -280,10 +293,10 @@ function redactRedactionExportSummary(
         }
         break
       case 'blockedTypes':
-        out.blockedTypes = redactStringArray(child, childPath, state) as RedactionExportBlockedType[]
+        out.blockedTypes = redactBlockedTypesArray(child, childPath, state)
         break
       case 'omittedFieldPaths':
-        out.omittedFieldPaths = redactStringArray(child, childPath, state)
+        out.omittedFieldPaths = redactOmittedFieldPathsArray(child, childPath, state)
         break
       case 'unknownFieldCount':
         if (typeof child === 'number' && Number.isFinite(child)) {
@@ -307,7 +320,29 @@ function redactRedactionExportSummary(
   return out
 }
 
-function redactStringArray(
+function redactBlockedTypesArray(
+  value: unknown,
+  recordPath: string,
+  state: RedactionState
+): RedactionExportBlockedType[] {
+  if (!Array.isArray(value)) {
+    addUnknownNestedObject(state, recordPath)
+    return []
+  }
+
+  const out: RedactionExportBlockedType[] = []
+  value.forEach((item, index) => {
+    const itemPath = `${recordPath}[${index}]`
+    if (typeof item !== 'string' || !REDACTION_EXPORT_BLOCKED_TYPES.has(item as RedactionExportBlockedType)) {
+      addUnknownNestedObject(state, itemPath)
+      return
+    }
+    out.push(item as RedactionExportBlockedType)
+  })
+  return out
+}
+
+function redactOmittedFieldPathsArray(
   value: unknown,
   recordPath: string,
   state: RedactionState
@@ -320,13 +355,21 @@ function redactStringArray(
   const out: string[] = []
   value.forEach((item, index) => {
     const itemPath = `${recordPath}[${index}]`
-    if (typeof item !== 'string') {
+    if (typeof item !== 'string' || !isSafeOmittedFieldPath(item)) {
       addUnknownNestedObject(state, itemPath)
       return
     }
     out.push(sanitizeString(item, itemPath, state))
   })
   return out
+}
+
+function isSafeOmittedFieldPath(value: string): boolean {
+  return (
+    value.length > 0 &&
+    value.length <= MAX_OMITTED_FIELD_PATH_LENGTH &&
+    SAFE_OMITTED_FIELD_PATH_PATTERN.test(value)
+  )
 }
 
 function redactCustomerProfileSourceSummary(
