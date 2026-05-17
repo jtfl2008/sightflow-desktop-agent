@@ -39,7 +39,8 @@ function testNormalizeMigrationKeepsSafeDefaults(): void {
 }
 
 function testDefaultDisabledDoesNotCreateProfile(): void {
-  const store = new CustomerMemoryStore({ backend: new MemoryCustomerMemoryBackend(), now: fixedNow })
+  const backend = new MemoryCustomerMemoryBackend()
+  const store = new CustomerMemoryStore({ backend, now: fixedNow })
   const result = store.createOrUpdateProfile({
     contactKey: ' Alice ',
     sourceAppType: 'wechat',
@@ -49,6 +50,15 @@ function testDefaultDisabledDoesNotCreateProfile(): void {
   assert.equal(result.omittedReason, 'disabled')
   assert.deepEqual(store.getState().profilesById, {})
   assert.equal(store.buildProviderInputByContact('wechat', 'Alice').omittedReason, 'disabled')
+  assert.equal(
+    store.runtimePreflight({
+      appType: 'wechat',
+      contactKey: 'Alice',
+      runtimeDecision: 'allow_provider'
+    }).omittedReason,
+    'disabled'
+  )
+  assert.equal(backend.secret, undefined)
 }
 
 function testContactKeyHashNormalizesAndPersistsSecret(): void {
@@ -128,6 +138,82 @@ function testCleanupExpiredRemovesProfileContent(): void {
   assert.equal(JSON.stringify(later.getState()).includes('expires'), false)
 }
 
+function testRuntimePreflightHeaderAndContactVerification(): void {
+  const backend = new MemoryCustomerMemoryBackend()
+  const store = enabledStore(backend)
+
+  const missingHeader = store.runtimePreflight({
+    appType: 'wechat',
+    contactKey: 'Alice',
+    multiSessionEnabled: true,
+    hasReliableHeader: false,
+    contactVerified: true,
+    runtimeDecision: 'allow_provider'
+  })
+  assert.equal(missingHeader.omittedReason, 'missing_header')
+  assert.equal(missingHeader.customerProfile, undefined)
+  assert.equal(backend.secret, undefined)
+
+  const contactNotVerified = store.runtimePreflight({
+    appType: 'wechat',
+    contactKey: 'Alice',
+    multiSessionEnabled: true,
+    hasReliableHeader: true,
+    contactVerified: false,
+    runtimeDecision: 'allow_provider'
+  })
+  assert.equal(contactNotVerified.omittedReason, 'contact_not_verified')
+  assert.equal(contactNotVerified.customerProfile, undefined)
+  assert.equal(backend.secret, undefined)
+}
+
+function testRuntimePreflightBlockedDecisionsDoNotHashOrInject(): void {
+  const backend = new MemoryCustomerMemoryBackend()
+  const store = enabledStore(backend)
+  const created = store.createOrUpdateProfile({
+    contactKey: 'Alice',
+    sourceAppType: 'wechat',
+    fields: { preferenceNotes: ['likes concise answers'] }
+  })
+  assert.equal(created.created, true)
+  backend.secret = undefined
+
+  for (const runtimeDecision of ['blocked', 'skip_provider', 'manual_takeover'] as const) {
+    const result = store.runtimePreflight({
+      appType: 'wechat',
+      contactKey: 'Alice',
+      runtimeDecision
+    })
+    assert.equal(result.omittedReason, 'disabled')
+    assert.equal(result.customerProfile, undefined)
+    assert.equal(backend.secret, undefined)
+  }
+}
+
+function testRuntimePreflightTombstoneBeatsStaleProfile(): void {
+  const backend = new MemoryCustomerMemoryBackend()
+  const store = enabledStore(backend)
+  const created = store.createOrUpdateProfile({
+    contactKey: 'Bob',
+    sourceAppType: 'wechat',
+    fields: { preferenceNotes: ['stale note'] }
+  })
+  assert.equal(created.created, true)
+  const tombstone = store.deleteProfile(created.profile.profileId)
+  assert.ok(tombstone)
+  backend.state!.profilesById[created.profile.profileId] = created.profile
+  backend.state!.profileIdsByContactKeyHash[created.profile.contactKeyHash] =
+    created.profile.profileId
+
+  const result = store.runtimePreflight({
+    appType: 'wechat',
+    contactKey: 'Bob',
+    runtimeDecision: 'allow_provider'
+  })
+  assert.equal(result.omittedReason, 'deleted')
+  assert.equal(result.customerProfile, undefined)
+}
+
 function main(): void {
   testNormalizeMigrationKeepsSafeDefaults()
   testDefaultDisabledDoesNotCreateProfile()
@@ -135,6 +221,9 @@ function main(): void {
   testPendingSuggestionDoesNotInjectUntilConfirmed()
   testDeleteAndClearAllWriteTombstonesWithoutContent()
   testCleanupExpiredRemovesProfileContent()
+  testRuntimePreflightHeaderAndContactVerification()
+  testRuntimePreflightBlockedDecisionsDoNotHashOrInject()
+  testRuntimePreflightTombstoneBeatsStaleProfile()
   console.log('customer memory store mock tests passed')
 }
 

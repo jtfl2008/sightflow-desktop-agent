@@ -3,6 +3,8 @@ import { createRequire } from 'node:module'
 import type { AppType } from '../core/rpa/types'
 import {
   CustomerMemorySettings,
+  CustomerMemoryRuntimePreflightInput,
+  CustomerMemoryRuntimePreflightResult,
   CustomerMemoryStoreShape,
   CustomerMemorySuggestion,
   CustomerProfileFields,
@@ -222,26 +224,77 @@ export class CustomerMemoryStore {
     customerProfile?: ReturnType<typeof buildProviderInputCustomerProfile>['customerProfile']
     omittedReason?: string
   } {
-    const state = this.getState()
-    if (!state.settings.enabled || !state.settings.providerInjectionEnabledByDefault) {
-      return { omittedReason: 'disabled' }
+    const result = this.runtimePreflight({
+      appType,
+      contactKey,
+      runtimeDecision: 'allow_provider'
+    })
+    return {
+      customerProfile: result.customerProfile,
+      omittedReason: result.omittedReason
     }
-    if (!contactKey?.trim()) return { omittedReason: 'missing_contact' }
+  }
 
-    const contactKeyHash = this.hashContactKey(appType, contactKey)
-    if (state.tombstonesByContactKeyHash[contactKeyHash]) return { omittedReason: 'deleted' }
+  runtimePreflight(
+    input: CustomerMemoryRuntimePreflightInput
+  ): CustomerMemoryRuntimePreflightResult {
+    const state = this.getState()
+    if (
+      input.runtimeDecision === 'blocked' ||
+      input.runtimeDecision === 'skip_provider' ||
+      input.runtimeDecision === 'manual_takeover' ||
+      input.perRunMemoryDisabled
+    ) {
+      return omitted('disabled')
+    }
+    if (!state.settings.enabled || !state.settings.providerInjectionEnabledByDefault) {
+      return omitted('disabled')
+    }
+    if (input.multiSessionEnabled && input.hasReliableHeader === false) {
+      return omitted('missing_header')
+    }
+    if (input.multiSessionEnabled && input.contactVerified === false) {
+      return omitted('contact_not_verified')
+    }
+    if (!input.contactKey?.trim()) return omitted('missing_contact')
+
+    const contactKeyHash = this.hashContactKey(input.appType, input.contactKey)
+    if (state.tombstonesByContactKeyHash[contactKeyHash]) {
+      return omitted('deleted', contactKeyHash)
+    }
     const profileId = state.profileIdsByContactKeyHash[contactKeyHash]
     const profile = profileId ? state.profilesById[profileId] : null
-    if (!profile) return { omittedReason: 'not_found' }
-    if (profile.disabled) return { omittedReason: 'disabled' }
+    if (!profile) return omitted('not_found', contactKeyHash)
+    if (profile.disabled) return omitted('disabled', contactKeyHash)
     if (profile.expiresAt && Date.parse(profile.expiresAt) <= this.now().getTime()) {
-      return { omittedReason: 'expired' }
+      return omitted('expired', contactKeyHash)
     }
     const hasPending = Object.values(state.pendingSuggestionsById).some(
       (suggestion) => suggestion.contactKeyHash === contactKeyHash && suggestion.status === 'pending'
     )
-    if (hasPending) return { omittedReason: 'not_confirmed' }
-    return buildProviderInputCustomerProfile(profile)
+    if (hasPending) return omitted('not_confirmed', contactKeyHash)
+    const providerInput = buildProviderInputCustomerProfile(profile)
+    if (!providerInput.customerProfile) {
+      return omitted(providerInput.omittedReason ?? 'sanitized', contactKeyHash)
+    }
+    return {
+      customerProfile: providerInput.customerProfile,
+      contactKeyHash,
+      injectedFieldPaths: providerInput.customerProfile.injectedFieldPaths,
+      safetyHintApplied: true
+    }
+
+    function omitted(
+      omittedReason: CustomerMemoryRuntimePreflightResult['omittedReason'],
+      contactKeyHash?: string
+    ): CustomerMemoryRuntimePreflightResult {
+      return {
+        omittedReason,
+        contactKeyHash,
+        injectedFieldPaths: [],
+        safetyHintApplied: true
+      }
+    }
   }
 
   private save(state: CustomerMemoryStoreShape): void {

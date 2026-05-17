@@ -1244,7 +1244,11 @@ async function startEngineCore(rawConfig?: any): Promise<SkillStartResult> {
           }
         })
         const channelContext = buildProviderChannelContext(input, settings)
-        const customerMemory = buildCustomerMemoryForProvider(input, channelContext)
+        const customerMemory = buildCustomerMemoryForProvider(
+          input,
+          channelContext,
+          routeActionToRuntimeDecision(intentResult.route.action)
+        )
         auditStore.record({
           category: 'provider',
           action: channelContext.finalAction === 'allow_send'
@@ -1391,17 +1395,38 @@ function buildProviderChannelContext(
 
 function buildCustomerMemoryForProvider(
   input: ProviderInput,
-  channelContext: ProviderInputChannelContext
+  channelContext: ProviderInputChannelContext,
+  runtimeDecision: 'allow_provider' | 'draft_review' | 'skip_provider' | 'blocked' | 'manual_takeover'
 ): ReturnType<CustomerMemoryStore['buildProviderInputByContact']> {
-  if (channelContext.customerMemoryOmittedReason) {
-    return { omittedReason: channelContext.customerMemoryOmittedReason }
-  }
-  const result = customerMemoryStore.buildProviderInputByContact(input.appType, input.currentContact)
+  const result = customerMemoryStore.runtimePreflight({
+    appType: input.appType,
+    contactKey: input.currentContact,
+    contactVerified: channelContext.currentContactVerified,
+    hasReliableHeader: channelContext.headerConfigured,
+    multiSessionEnabled: channelContext.multiSessionEnabled,
+    runtimeDecision
+  })
   if (result.omittedReason) {
-    channelContext.customerMemoryOmittedReason =
-      result.omittedReason as ProviderInputChannelContext['customerMemoryOmittedReason']
+    channelContext.customerMemoryOmittedReason = result.omittedReason
   }
-  return result
+  return { customerProfile: result.customerProfile, omittedReason: result.omittedReason }
+}
+
+function routeActionToRuntimeDecision(
+  action: NonNullable<ProviderInput['route']>['action']
+): 'allow_provider' | 'draft_review' | 'skip_provider' | 'blocked' | 'manual_takeover' {
+  switch (action) {
+    case 'run_provider':
+      return 'allow_provider'
+    case 'run_provider_requires_review':
+      return 'draft_review'
+    case 'skip_provider':
+      return 'skip_provider'
+    case 'manual_takeover':
+      return 'manual_takeover'
+    case 'blocked':
+      return 'blocked'
+  }
 }
 
 /**

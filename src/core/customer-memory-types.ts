@@ -121,6 +121,26 @@ export type CustomerMemoryOmittedReason =
   | 'not_confirmed'
   | 'deleted'
   | 'sanitized'
+  | 'missing_header'
+  | 'contact_not_verified'
+
+export interface CustomerMemoryRuntimePreflightInput {
+  appType: AppType
+  contactKey?: string
+  contactVerified?: boolean
+  hasReliableHeader?: boolean
+  multiSessionEnabled?: boolean
+  perRunMemoryDisabled?: boolean
+  runtimeDecision: 'allow_provider' | 'draft_review' | 'skip_provider' | 'blocked' | 'manual_takeover'
+}
+
+export interface CustomerMemoryRuntimePreflightResult {
+  customerProfile?: ProviderInputCustomerProfile
+  omittedReason?: CustomerMemoryOmittedReason
+  contactKeyHash?: string
+  injectedFieldPaths: string[]
+  safetyHintApplied: boolean
+}
 
 export const CUSTOMER_MEMORY_FIELD_BUDGETS = {
   preferenceNotes: { maxItems: 10, maxChars: 120 },

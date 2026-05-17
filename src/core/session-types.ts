@@ -15,8 +15,6 @@ export interface ProviderInputChannelContext {
   contactKeyHash?: string
   customerMemoryOmittedReason?:
     | CustomerMemoryOmittedReason
-    | 'missing_header'
-    | 'contact_not_verified'
   finalAction: ProviderInputChannelFinalAction
   reasons: string[]
 }

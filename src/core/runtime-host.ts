@@ -56,7 +56,7 @@ export class RuntimeHost<TState> {
     this.stopping = true
     this.running = false
 
-    for (const timer of this.timers) {
+    for (const timer of Array.from(this.timers)) {
       clearTimeout(timer)
     }
     this.timers.clear()
