@@ -1,0 +1,149 @@
+{
+  "schemaVersion": "m8l.rc-smoke-diagnostics-evidence.v1",
+  "taskId": "f6c14d6c-1e4f-4e4a-9577-df84f1d73017",
+  "generatedAt": "2026-05-17T00:00:00.000Z",
+  "appMode": "electron_desktop_local_store",
+  "scope": "diagnostics_readonly_rc_smoke",
+  "releaseDecision": "needs_minimal_fix",
+  "deploymentManifestGenerated": false,
+  "platforms": [
+    {
+      "platform": "macos",
+      "status": "skip",
+      "reasonCode": "manual_platform_smoke_not_collected_in_this_task"
+    },
+    {
+      "platform": "windows",
+      "status": "skip",
+      "reasonCode": "manual_platform_smoke_not_collected_in_this_task"
+    }
+  ],
+  "commands": [
+    {
+      "command": "npm run typecheck",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/core/diagnostics/diagnostics-field-whitelist.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/core/diagnostics/diagnostics-redaction-checker.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/core/diagnostics/diagnostics-contact-hash.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/core/diagnostics/diagnostics-aggregator.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "npx ts-node src/core/diagnostics/diagnostics-export.mock-test.ts",
+      "status": "pass"
+    },
+    {
+      "command": "TS_NODE_CACHE=false npx ts-node src/main/diagnostics-ipc.mock-test.ts",
+      "status": "pass"
+    }
+  ],
+  "cases": [
+    {
+      "caseId": "diagnostics.query.run_id",
+      "source": "runtime",
+      "status": "pass",
+      "assertions": [
+        "query accepts runId and returns whitelisted DTO records",
+        "redaction blocked records do not expose unsafe payload"
+      ]
+    },
+    {
+      "caseId": "diagnostics.query.draft_id",
+      "source": "runtime",
+      "status": "pass",
+      "assertions": [
+        "query contract includes draftId filter",
+        "adapter path remains read-only"
+      ]
+    },
+    {
+      "caseId": "diagnostics.query.contact_hash",
+      "source": "runtime",
+      "status": "pass",
+      "assertions": [
+        "plaintext contact identifiers are rejected",
+        "safe hash-shaped identifiers are allowed"
+      ]
+    },
+    {
+      "caseId": "diagnostics.source_partition.all_sources",
+      "source": "runtime",
+      "status": "pass",
+      "assertions": [
+        "source enum includes runtime, debug_console, vision_eval, workflow_preview, provider_lifecycle, recovery_reconciliation",
+        "related sources stay summarized instead of merged into runtime payload"
+      ]
+    },
+    {
+      "caseId": "diagnostics.field_whitelist",
+      "source": "runtime",
+      "status": "pass",
+      "assertions": [
+        "timeline details are reduced to approved capability fields",
+        "unsafe image and raw fields are omitted"
+      ]
+    },
+    {
+      "caseId": "diagnostics.export.redaction_blocked",
+      "source": "runtime",
+      "status": "pass",
+      "assertions": [
+        "JSON export blocks unsafe fields",
+        "Markdown export blocks unsafe fields",
+        "blocked export returns blockedTypes and omittedFieldPaths"
+      ]
+    },
+    {
+      "caseId": "diagnostics.renderer_readonly_boundary",
+      "source": "runtime",
+      "status": "pass",
+      "assertions": [
+        "renderer diagnostics page invokes query and redacted export channels only",
+        "no diagnostics UI mutation channel was found in static review"
+      ]
+    },
+    {
+      "caseId": "diagnostics.no_raw_screenshot_store_file",
+      "source": "runtime",
+      "status": "pass",
+      "assertions": [
+        "diagnostics DTO tests cover raw screenshot blocking",
+        "renderer diagnostics static review found no direct file or raw store read call"
+      ]
+    },
+    {
+      "caseId": "diagnostics.no_send_provider_install_workflow",
+      "source": "runtime",
+      "status": "pass",
+      "assertions": [
+        "diagnostics IPC exposes query, getRecord, and exportRedacted handlers",
+        "no diagnostics mutation handler is registered"
+      ]
+    }
+  ],
+  "redactionSummary": {
+    "status": "passed",
+    "blockedTypes": [],
+    "omittedFieldPaths": [],
+    "unknownFieldCount": 0,
+    "checkedAt": "2026-05-17T00:00:00.000Z"
+  },
+  "blockers": [
+    {
+      "code": "manual_macos_windows_smoke_not_collected",
+      "severity": "minimal_fix",
+      "summary": "This task verified diagnostics contracts and targeted tests, but did not collect real macOS and Windows desktop smoke sessions."
+    }
+  ]
+}
