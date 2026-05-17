@@ -10,7 +10,7 @@ interface LogEntry {
 }
 
 type EngineStatus = 'idle' | 'running' | 'error'
-type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge' | 'intent'
+type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge' | 'intent' | 'channel'
 type AppType = 'wechat' | 'wework' | 'dingtalk' | 'lark' | 'slack' | 'telegram' | 'generic'
 
 type CaptureStrategy = 'auto' | 'vlm' | 'box-select'
@@ -668,6 +668,12 @@ function SettingsWindow(): React.JSX.Element {
         >
           意图路由
         </button>
+        <button
+          className={`settings-nav-item ${section === 'channel' ? 'active' : ''}`}
+          onClick={() => setSection('channel')}
+        >
+          渠道适配
+        </button>
       </aside>
 
       <main className="settings-main">
@@ -679,8 +685,10 @@ function SettingsWindow(): React.JSX.Element {
           <DraftAuditDashboard />
         ) : section === 'knowledge' ? (
           <KnowledgeSettingsPage />
-        ) : (
+        ) : section === 'intent' ? (
           <IntentRoutingSettingsPage />
+        ) : (
+          <ChannelAdapterSettingsPage />
         )}
       </main>
     </div>
