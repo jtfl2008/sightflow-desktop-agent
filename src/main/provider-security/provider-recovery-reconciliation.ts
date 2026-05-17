@@ -305,7 +305,7 @@ async function evaluateCandidateGate<TSettings extends ProviderRecoverySettings>
   const artifactPaths = new Set<string>((candidate.manifest.artifacts || []).map((artifact) => artifact.path))
   artifactPaths.add(candidate.manifest.entry)
   const artifactContentByPath: Record<string, string> = {}
-  for (const artifactPath of artifactPaths) {
+  for (const artifactPath of Array.from(artifactPaths)) {
     const pathCheck = validateProviderEntryPath(artifactPath)
     if (!pathCheck.valid || !pathCheck.normalizedPath) {
       throw new Error(pathCheck.message || 'Provider artifact path invalid')

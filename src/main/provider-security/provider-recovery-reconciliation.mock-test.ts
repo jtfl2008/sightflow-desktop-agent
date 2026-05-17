@@ -67,8 +67,9 @@ class MemorySettingsStore {
 class MemoryAuditStore {
   records: unknown[] = []
 
-  record(value: unknown): void {
+  record(value: unknown): any {
     this.records.push(value)
+    return value
   }
 }
 
