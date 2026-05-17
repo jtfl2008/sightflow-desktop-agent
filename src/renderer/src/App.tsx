@@ -1199,10 +1199,32 @@ function IntentRoutingSettingsPage(): React.JSX.Element {
   const [selectedId, setSelectedId] = useState('')
   const [sample, setSample] = useState('请问价格是多少？')
   const [preview, setPreview] = useState<any | null>(null)
+  const [auditRecords, setAuditRecords] = useState<AuditRecord[]>([])
+  const [auditQuery, setAuditQuery] = useState('')
+  const [auditIntent, setAuditIntent] = useState('all')
+  const [lowConfidenceOnly, setLowConfidenceOnly] = useState(false)
+  const [reviewRequiredOnly, setReviewRequiredOnly] = useState(false)
   const [error, setError] = useState('')
   const [dirty, setDirty] = useState(false)
   const rules = settings?.rules || []
   const selectedRule = rules.find((rule: any) => rule.id === selectedId) || rules[0]
+  const filteredAuditRecords = auditRecords.filter((record) => {
+    const metadata = record.metadata || {}
+    const haystack = `${record.action} ${record.message || ''} ${String(metadata.intentId || '')} ${String(metadata.intentLabel || '')} ${String(metadata.routeId || '')} ${String(metadata.routeLabel || '')} ${String(metadata.matchedKnowledgeIds || '')}`.toLowerCase()
+    const matchesQuery = !auditQuery.trim() || haystack.includes(auditQuery.trim().toLowerCase())
+    const matchesIntent =
+      auditIntent === 'all' ||
+      metadata.intentId === auditIntent ||
+      metadata.intentLabel === auditIntent
+    const matchesLowConfidence =
+      !lowConfidenceOnly || metadata.lowConfidence === true || record.action.includes('low_confidence')
+    const matchesReviewRequired =
+      !reviewRequiredOnly ||
+      metadata.forceReview === true ||
+      metadata.reviewRequired === true ||
+      metadata.forcedReplyMode === 'draft_review'
+    return matchesQuery && matchesIntent && matchesLowConfidence && matchesReviewRequired
+  })
 
   const loadIntentSettings = useCallback(async () => {
     const next = await window.electron?.invoke('intentRouting:get')
@@ -1250,6 +1272,8 @@ function IntentRoutingSettingsPage(): React.JSX.Element {
           }
     setSettings(withSample)
     setSelectedId(withSample.rules?.[0]?.id || '')
+    const records = (await window.electron?.invoke('audit:list', 100)) as AuditRecord[] | undefined
+    setAuditRecords(records || [])
   }, [])
 
   useEffect(() => {
@@ -1276,6 +1300,7 @@ function IntentRoutingSettingsPage(): React.JSX.Element {
 
   const updateRule = useCallback(
     (patch: Record<string, unknown>) => {
+      if (!selectedRule) return
       setDirty(true)
       setSettings((current: any) => ({
         ...current,
@@ -1284,6 +1309,38 @@ function IntentRoutingSettingsPage(): React.JSX.Element {
     },
     [selectedRule]
   )
+
+  const createRule = useCallback(() => {
+    const id = `intent_rule_${Date.now()}`
+    const nextRule = {
+      id,
+      enabled: true,
+      priority: rules.length + 1,
+      intentId: `custom_intent_${rules.length + 1}`,
+      label: '新增意图',
+      score: 0.7,
+      conditions: [{ type: 'keyword', keywords: ['关键词'], match: 'any' }]
+    }
+    setDirty(true)
+    setError('')
+    setSettings((current: any) => ({
+      ...current,
+      enabled: true,
+      rules: [...(current.rules || []), nextRule]
+    }))
+    setSelectedId(id)
+  }, [rules.length])
+
+  const deleteSelectedRule = useCallback(() => {
+    if (!selectedRule) return
+    const confirmed = window.confirm(`删除意图规则「${selectedRule.label}」？`)
+    if (!confirmed) return
+    const remaining = rules.filter((rule: any) => rule.id !== selectedRule.id)
+    setDirty(true)
+    setError('')
+    setSettings((current: any) => ({ ...current, rules: remaining }))
+    setSelectedId(remaining[0]?.id || '')
+  }, [rules, selectedRule])
 
   const saveIntentSettings = useCallback(async () => {
     const result = await window.electron?.invoke('intentRouting:save', settings)
@@ -1308,6 +1365,7 @@ function IntentRoutingSettingsPage(): React.JSX.Element {
         <div className="draft-header-actions">
           <StatusChip label={settings.enabled ? '运行中' : '已停用'} tone={settings.enabled ? 'success' : 'warning'} />
           <StatusChip label={dirty ? '未保存' : '已保存'} tone={dirty ? 'warning' : 'success'} />
+          <button className="review-btn secondary" onClick={createRule}>新增规则</button>
           <button className="review-btn primary" onClick={saveIntentSettings}>保存</button>
         </div>
       </header>
@@ -1316,33 +1374,52 @@ function IntentRoutingSettingsPage(): React.JSX.Element {
         <section className="draft-panel intent-list">
           <h2>意图标签</h2>
           <label className="knowledge-enabled"><input type="checkbox" checked={settings.enabled} onChange={(event) => { setDirty(true); setSettings({ ...settings, enabled: event.target.checked }) }} /> 启用路由</label>
-          {rules.map((rule: any) => (
-            <button key={rule.id} className={`knowledge-row ${rule.id === selectedRule?.id ? 'active' : ''} ${rule.enabled ? '' : 'muted'}`} onClick={() => setSelectedId(rule.id)}>
-              <strong>{rule.label}</strong>
-              <StatusChip label={`置信度 ${Math.round(rule.score * 100)}%`} tone={rule.score < settings.minConfidenceForAutoRoute ? 'warning' : 'info'} />
-              <span>{rule.intentId}</span>
-            </button>
-          ))}
+          <div className="review-actions">
+            <button className="review-btn secondary" onClick={createRule}>新增</button>
+            <button className="review-btn danger" disabled={!selectedRule} onClick={deleteSelectedRule}>删除</button>
+          </div>
+          {rules.length ? (
+            rules.map((rule: any) => (
+              <button key={rule.id} className={`knowledge-row ${rule.id === selectedRule?.id ? 'active' : ''} ${rule.enabled ? '' : 'muted'}`} onClick={() => setSelectedId(rule.id)}>
+                <strong>{rule.label}</strong>
+                <StatusChip label={`置信度 ${Math.round(rule.score * 100)}%`} tone={rule.score < settings.minConfidenceForAutoRoute ? 'warning' : 'info'} />
+                <span>{rule.intentId}</span>
+              </button>
+            ))
+          ) : (
+            <div className="empty-state">
+              <span>▱</span>
+              暂无意图规则
+              <button className="review-btn primary" onClick={createRule}>新增规则</button>
+            </div>
+          )}
         </section>
         <section className="draft-panel knowledge-editor">
           <h2>策略编辑</h2>
-          <label>意图标签</label>
-          <input value={selectedRule?.label || ''} onChange={(event) => updateRule({ label: event.target.value })} />
-          <label>置信度阈值</label>
-          <input type="range" min="0" max="1" step="0.01" value={selectedRule?.score || 0} onChange={(event) => updateRule({ score: Number(event.target.value) })} />
-          <label>Prompt 模板</label>
-          <select value={settings.routes?.[0]?.promptPresetId || ''} onChange={() => setDirty(true)}>
-            <option value="sales">销售模板</option>
-            <option value="">默认模板</option>
-          </select>
-          <label>知识范围</label>
-          <select onChange={() => setDirty(true)}>
-            <option>全部知识</option>
-            <option>FAQ</option>
-            <option>文档</option>
-          </select>
-          <label className="knowledge-enabled"><input type="checkbox" checked={selectedRule?.intentId === 'sensitive_action'} onChange={() => setDirty(true)} /> 强制审核</label>
-          <div className="error-banner">低置信：需人工确认</div>
+          {selectedRule ? (
+            <>
+              <label>意图标签</label>
+              <input value={selectedRule.label || ''} onChange={(event) => updateRule({ label: event.target.value })} />
+              <label>置信度阈值</label>
+              <input type="range" min="0" max="1" step="0.01" value={selectedRule.score || 0} onChange={(event) => updateRule({ score: Number(event.target.value) })} />
+              <label>Prompt 模板</label>
+              <select value={settings.routes?.[0]?.promptPresetId || ''} onChange={() => setDirty(true)}>
+                <option value="sales">销售模板</option>
+                <option value="">默认模板</option>
+              </select>
+              <label>知识范围</label>
+              <select onChange={() => setDirty(true)}>
+                <option>全部知识</option>
+                <option>FAQ</option>
+                <option>文档</option>
+              </select>
+              <label className="knowledge-enabled"><input type="checkbox" checked={selectedRule.intentId === 'sensitive_action'} onChange={() => setDirty(true)} /> 强制审核</label>
+              <label className="knowledge-enabled"><input type="checkbox" checked={selectedRule.enabled} onChange={(event) => updateRule({ enabled: event.target.checked })} /> 启用当前规则</label>
+              <div className="error-banner">低置信：需人工确认</div>
+            </>
+          ) : (
+            <EmptyState label="请选择或新增意图规则" />
+          )}
         </section>
         <section className="draft-panel intent-preview">
           <h2>路由预览</h2>
@@ -1360,10 +1437,44 @@ function IntentRoutingSettingsPage(): React.JSX.Element {
       <section className="draft-panel audit-table-panel">
         <div className="audit-filter-bar">
           <h2>审计记录</h2>
-          <input className="audit-search" placeholder="过滤 intent/route/matchedKnowledge" />
-          <button className="review-btn secondary">查询</button>
+          <select className="audit-search" value={auditIntent} onChange={(event) => setAuditIntent(event.target.value)}>
+            <option value="all">全部意图</option>
+            {rules.map((rule: any) => (
+              <option key={rule.id} value={rule.intentId}>{rule.label}</option>
+            ))}
+          </select>
+          <input className="audit-search" value={auditQuery} onChange={(event) => setAuditQuery(event.target.value)} placeholder="过滤 intent/route/matchedKnowledge" />
+          <label><input type="checkbox" checked={lowConfidenceOnly} onChange={(event) => setLowConfidenceOnly(event.target.checked)} /> 低置信</label>
+          <label><input type="checkbox" checked={reviewRequiredOnly} onChange={(event) => setReviewRequiredOnly(event.target.checked)} /> 审核必需</label>
         </div>
-        <EmptyState label="暂无审计记录" />
+        {filteredAuditRecords.length ? (
+          <table className="audit-table">
+            <thead>
+              <tr>
+                <th>时间</th>
+                <th>Intent</th>
+                <th>Route</th>
+                <th>置信度</th>
+                <th>规则</th>
+                <th>结果</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredAuditRecords.slice(0, 8).map((record) => (
+                <tr key={record.id}>
+                  <td>{formatTime(record.occurredAt)}</td>
+                  <td>{String(record.metadata?.intentLabel || record.metadata?.intentId || '-')}</td>
+                  <td>{String(record.metadata?.routeLabel || record.metadata?.routeId || '-')}</td>
+                  <td>{record.metadata?.confidence !== undefined ? `${Math.round(Number(record.metadata.confidence) * 100)}%` : '-'}</td>
+                  <td>{String(record.metadata?.matchedRuleIds || record.metadata?.matchedKnowledgeIds || '-')}</td>
+                  <td><StatusChip label={record.severity === 'error' ? '失败' : record.action.includes('low_confidence') ? '低置信' : '已记录'} tone={record.severity === 'error' ? 'danger' : record.action.includes('low_confidence') ? 'warning' : 'success'} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <EmptyState label="暂无审计记录" />
+        )}
       </section>
     </div>
   )
