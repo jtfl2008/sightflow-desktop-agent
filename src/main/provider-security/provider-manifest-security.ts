@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import path from 'node:path'
+import * as path from 'node:path'
 import type { ProviderBundleManifest } from '../provider-bundle'
 import type {
   ProviderArtifactDeclaration,
