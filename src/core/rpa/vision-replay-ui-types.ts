@@ -50,6 +50,53 @@ export interface VisionEvalReportDetail {
   }
 }
 
+export interface VisionReplayListReportsRequest {
+  query?: string
+  result?: VisionEvalReportListItem['result']
+  category?: VisionFailureCategory
+  limit?: number
+  offset?: number
+}
+
+export interface VisionReplayListReportsResponse {
+  success: true
+  reports: VisionEvalReportListItem[]
+  total: number
+}
+
+export interface VisionReplayOpenReportRequest {
+  reportId: string
+  sampleId?: string
+}
+
+export interface VisionReplayOpenReportResponse {
+  success: true
+  detail: VisionEvalReportDetail
+}
+
+export interface VisionReplayListSamplesRequest {
+  suiteId?: string
+  reportId?: string
+  category?: VisionFailureCategory
+}
+
+export interface VisionReplayListSamplesResponse {
+  success: true
+  samples: VisionReplaySamplePreview[]
+}
+
+export interface VisionReplayRunPrivacyGateRequest {
+  sourceKind: 'report' | 'suite' | 'sample'
+  reportId?: string
+  suitePathToken?: string
+  sampleId?: string
+}
+
+export interface VisionReplayRunPrivacyGateResponse {
+  success: true
+  gate: VisionImportPrivacyGateResult
+}
+
 export interface VisionReplaySamplePreview {
   sampleId: string
   suiteId: string

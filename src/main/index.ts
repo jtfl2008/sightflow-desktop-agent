@@ -38,6 +38,8 @@ import { KnowledgeStore } from './knowledge-store'
 import { IntentRoutingStore } from './intent-routing-store'
 import { ChannelAdapterStore } from './channel-adapter-store'
 import { CustomerMemoryStore } from './customer-memory-store'
+import { VisionReplayStore } from './vision-replay-store'
+import { registerVisionReplayIpc } from './vision-replay-ipc'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
 const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260428'
@@ -381,6 +383,14 @@ app.whenReady().then(async () => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
+  registerVisionReplayIpc(
+    ipcMain,
+    new VisionReplayStore({
+      projectRoot: process.cwd(),
+      userDataRoot: app.getPath('userData')
+    })
+  )
+
   // ── Settings 持久化 ──
   ipcMain.handle('settings:getAll', async () => {
     return normalizeSettings(settingsStore.store)
@@ -393,7 +403,10 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('settings:set', async (_event, data: Record<string, any>) => {
     const current = normalizeSettings(settingsStore.store)
-    const chatProviderPatch = sanitizeChatProviderSettingsPatch(data.chatProvider, current.chatProvider)
+    const chatProviderPatch = sanitizeChatProviderSettingsPatch(
+      data.chatProvider,
+      current.chatProvider
+    )
     const next = {
       ...current,
       ...data,
@@ -836,15 +849,18 @@ app.whenReady().then(async () => {
     return runtime?.getState().replyDrafts ?? []
   })
 
-  ipcMain.handle('review:approveDraft', async (_event, args: { draftId: string; content?: string }) => {
-    runtime?.dispatch({ type: 'draft.approve', draftId: args.draftId, content: args.content })
-    auditStore.record({
-      category: 'draft',
-      action: 'approved',
-      metadata: { draftId: args.draftId, edited: Boolean(args.content) }
-    })
-    return { success: true }
-  })
+  ipcMain.handle(
+    'review:approveDraft',
+    async (_event, args: { draftId: string; content?: string }) => {
+      runtime?.dispatch({ type: 'draft.approve', draftId: args.draftId, content: args.content })
+      auditStore.record({
+        category: 'draft',
+        action: 'approved',
+        metadata: { draftId: args.draftId, edited: Boolean(args.content) }
+      })
+      return { success: true }
+    }
+  )
 
   ipcMain.handle('review:skipDraft', async (_event, draftId: string) => {
     runtime?.dispatch({ type: 'draft.skip', draftId })
@@ -1388,7 +1404,8 @@ function sanitizeChatProviderSettingsPatch(
   const requestedInstalled = rawPatch.installed
   const requestedManifestUrl = rawPatch.manifestUrl
   const isClearingToBuiltin =
-    requestedInstalled === null && (requestedManifestUrl === '' || requestedManifestUrl === undefined)
+    requestedInstalled === null &&
+    (requestedManifestUrl === '' || requestedManifestUrl === undefined)
 
   if (isClearingToBuiltin) {
     next.installed = null
