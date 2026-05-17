@@ -82,11 +82,11 @@ export function checkDiagnosticsRedaction(
 
   visit(value, '', 0)
 
-  const uniqueBlockedTypes = [...blockedTypes].sort()
+  const uniqueBlockedTypes = Array.from(blockedTypes).sort()
   return {
     status: uniqueBlockedTypes.length > 0 ? 'blocked' : 'passed',
     blockedTypes: uniqueBlockedTypes,
-    omittedFieldPaths: [...new Set(omittedFieldPaths)].sort(),
+    omittedFieldPaths: Array.from(new Set(omittedFieldPaths)).sort(),
     unknownFieldCount,
     checkedAt: (options.now ?? (() => new Date()))().toISOString()
   }

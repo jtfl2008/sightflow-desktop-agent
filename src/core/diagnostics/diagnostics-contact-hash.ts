@@ -38,12 +38,23 @@ export function validateDiagnosticsQuery(input: DiagnosticsQuery): DiagnosticsQu
   }
   if (input.contactHash !== undefined) {
     const trimmed = input.contactHash.trim()
+    if (CONTACT_HASH_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+      return {
+        ok: true,
+        query: {
+          ...input,
+          runId: input.runId?.trim(),
+          draftId: input.draftId?.trim(),
+          contactHash: trimmed,
+          limit: clampInteger(input.limit, 1, 200, 50),
+          offset: clampInteger(input.offset, 0, 10000, 0)
+        }
+      }
+    }
     if (looksLikePlaintextContact(trimmed)) {
       return fail('plaintext_contact_rejected', '请输入 contactHash，不能查询联系人明文')
     }
-    if (!CONTACT_HASH_PATTERNS.some((pattern) => pattern.test(trimmed))) {
-      return fail('invalid_contact_hash', 'Invalid contactHash')
-    }
+    return fail('invalid_contact_hash', 'Invalid contactHash')
   }
 
   return {
