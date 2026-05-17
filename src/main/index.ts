@@ -49,6 +49,7 @@ import { DiagnosticsStore } from './diagnostics-store'
 import {
   createEmptyDiagnosticsAdapter,
   createProviderLifecycleDiagnosticsAdapter,
+  createRecoveryReconciliationDiagnosticsAdapter,
   createRuntimeDiagnosticsAdapter,
   createVisionEvalDiagnosticsAdapter
 } from './diagnostics-source-adapters'
@@ -420,7 +421,8 @@ app.whenReady().then(async () => {
       createEmptyDiagnosticsAdapter('debug_console'),
       createVisionEvalDiagnosticsAdapter(visionReplayStore),
       createEmptyDiagnosticsAdapter('workflow_preview'),
-      createProviderLifecycleDiagnosticsAdapter(auditStore)
+      createProviderLifecycleDiagnosticsAdapter(auditStore),
+      createRecoveryReconciliationDiagnosticsAdapter(auditStore)
     ])
   )
 

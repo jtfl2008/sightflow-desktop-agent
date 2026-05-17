@@ -52,6 +52,30 @@ export function createProviderLifecycleDiagnosticsAdapter(
   }
 }
 
+export function createRecoveryReconciliationDiagnosticsAdapter(
+  auditStore: AuditStore
+): DiagnosticsSourceAdapter {
+  return {
+    source: 'recovery_reconciliation',
+    async query(input) {
+      return auditStore
+        .getRecent(input.limit + input.offset)
+        .filter(
+          (record) =>
+            (record.source ?? sourceFromMetadata(record.metadata)) === 'recovery_reconciliation'
+        )
+        .filter((record) => matchesQuery(record as unknown as Record<string, unknown>, input))
+        .slice(input.offset, input.offset + input.limit)
+        .map((record) => ({
+          source: 'recovery_reconciliation' as const,
+          sourceRecordId: record.id,
+          raw: record as unknown as Record<string, unknown>,
+          createdAt: record.occurredAt
+        }))
+    }
+  }
+}
+
 export function createVisionEvalDiagnosticsAdapter(store: VisionReplayStore): DiagnosticsSourceAdapter {
   return {
     source: 'vision_eval',

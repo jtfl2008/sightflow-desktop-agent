@@ -16,6 +16,7 @@ export type AuditSource =
   | 'vision_eval'
   | 'workflow_preview'
   | 'provider_lifecycle'
+  | 'recovery_reconciliation'
 
 export interface AuditEventInput {
   category: AuditCategory

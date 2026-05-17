@@ -12,14 +12,16 @@ const SOURCES: DiagnosticsSource[] = [
   'debug_console',
   'vision_eval',
   'workflow_preview',
-  'provider_lifecycle'
+  'provider_lifecycle',
+  'recovery_reconciliation'
 ]
 const SOURCE_LABELS: Record<DiagnosticsSource, string> = {
   runtime: 'runtime',
   debug_console: 'debug_console',
   vision_eval: 'vision_eval',
   workflow_preview: 'workflow_preview',
-  provider_lifecycle: 'provider_lifecycle'
+  provider_lifecycle: 'provider_lifecycle',
+  recovery_reconciliation: 'recovery_reconciliation'
 }
 
 const FINAL_ACTIONS = [

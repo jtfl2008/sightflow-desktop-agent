@@ -26,4 +26,24 @@ for (const type of [
   assert.ok(result.blockedTypes.includes(type as any), `missing ${type}`)
 }
 
+const recoveryResult = checkDiagnosticsRedaction({
+  source: 'recovery_reconciliation',
+  action: 'provider_recovery_reconciliation',
+  providerConfig: { apiKey: 'sk-live-secret' },
+  manifestUrl: 'https://providers.example/manifest.json?token=super-secret-token',
+  localPath: '/workspace/provider/private-bundle.js',
+  fullConversation: 'full chat OCR private transcript',
+  contactName: 'alice@example.com'
+})
+
+assert.equal(recoveryResult.status, 'blocked')
+for (const type of [
+  'provider_config_values',
+  'secrets',
+  'full_chat',
+  'plaintext_contact'
+]) {
+  assert.ok(recoveryResult.blockedTypes.includes(type as any), `missing recovery ${type}`)
+}
+
 console.log('diagnostics-redaction-checker mock tests passed')

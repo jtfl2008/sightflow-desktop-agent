@@ -4,6 +4,7 @@ export type DiagnosticsSource =
   | 'vision_eval'
   | 'workflow_preview'
   | 'provider_lifecycle'
+  | 'recovery_reconciliation'
 
 export type DiagnosticsFinalAction =
   | 'draft_created'

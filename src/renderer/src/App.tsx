@@ -195,7 +195,13 @@ interface AuditRecord {
   id: string
   category: 'engine' | 'layout' | 'provider' | 'draft' | 'policy' | 'intent' | 'message' | 'error'
   action: string
-  source?: 'runtime' | 'debug_console' | 'vision_eval' | 'workflow_preview' | 'provider_lifecycle'
+  source?:
+    | 'runtime'
+    | 'debug_console'
+    | 'vision_eval'
+    | 'workflow_preview'
+    | 'provider_lifecycle'
+    | 'recovery_reconciliation'
   severity: 'debug' | 'info' | 'warn' | 'error'
   message?: string
   metadata: Record<string, unknown>

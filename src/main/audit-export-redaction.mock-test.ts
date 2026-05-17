@@ -489,6 +489,84 @@ function testRedactionExportSummaryCheckedAtShapeBlocksRecords(): void {
   )
 }
 
+function testRecoveryReconciliationExportRedaction(): void {
+  const tokenUrl = 'https://providers.example/manifest.json?token=super-secret-token'
+  const localPath = '/workspace/provider/private-bundle.js'
+  const configSecret = 'sk-live-provider-secret'
+  const contact = 'alice@example.com'
+  const store = new AuditStore({
+    backend: new MemoryAuditBackend([
+      {
+        id: 'recovery-redaction',
+        category: 'provider',
+        action: 'provider_recovery_reconciliation',
+        source: 'recovery_reconciliation',
+        severity: 'warn',
+        occurredAt: fixedNow().toISOString(),
+        metadata: {
+          decision: 'recovery_blocked',
+          reasonCodes: ['provider.recovery.settings_untrusted_unsigned'],
+          beforeSummary: {
+            providerId: 'custom-provider',
+            version: '1.0.0',
+            trustLevel: 'blocked',
+            productionInstallAllowed: false,
+            hasSettingsInstalled: true,
+            hasLifecyclePointer: true,
+            manifestUrlOrigin: 'https://providers.example',
+            manifestUrlHasRedactedQuery: true,
+            manifestUrl: tokenUrl,
+            localPath,
+            providerConfig: { apiKey: configSecret }
+          },
+          afterSummary: {
+            providerId: 'builtin-doubao',
+            trustLevel: 'builtin',
+            productionInstallAllowed: true,
+            hasSettingsInstalled: false,
+            hasLifecyclePointer: false
+          },
+          fullConversation: 'full chat OCR private transcript',
+          contactName: contact
+        }
+      }
+    ]),
+    now: fixedNow
+  })
+
+  const json = store.exportJson()
+  const markdown = store.exportMarkdown()
+  const parsed = JSON.parse(json)
+
+  for (const exported of [json, markdown]) {
+    assert.equal(exported.includes('super-secret-token'), false)
+    assert.equal(exported.includes(localPath), false)
+    assert.equal(exported.includes(configSecret), false)
+    assert.equal(exported.includes(contact), false)
+    assert.equal(exported.includes('full chat OCR private transcript'), false)
+    assert.equal(exported.includes('recovery_reconciliation'), false)
+    assert.equal(exported.includes('Export blocked'), true)
+  }
+  assert.equal(parsed.blocked, true)
+  assert.deepEqual(parsed.records, [])
+  assert.equal(parsed.redaction.status, 'blocked')
+  assert.ok(parsed.redaction.blockedTypes.includes('secrets'))
+  assert.ok(parsed.redaction.blockedTypes.includes('provider_config_values'))
+  assert.ok(parsed.redaction.blockedTypes.includes('full_chat'))
+  assert.ok(parsed.redaction.blockedTypes.includes('plaintext_contact'))
+  assert.ok(parsed.redaction.blockedTypes.includes('unknown_nested_object'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.beforeSummary.manifestUrl'
+    )
+  )
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.beforeSummary.providerConfig'
+    )
+  )
+}
+
 function main(): void {
   testCustomerMemoryExportRedaction()
   testForbiddenContentReturnsExportSummary()
@@ -499,6 +577,7 @@ function main(): void {
   testRedactionExportSummaryNestedObjectBlocksRecords()
   testRedactionExportSummaryArrayScalarShapeBlocksRecords()
   testRedactionExportSummaryCheckedAtShapeBlocksRecords()
+  testRecoveryReconciliationExportRedaction()
   console.log('audit export redaction mock tests passed')
 }
 

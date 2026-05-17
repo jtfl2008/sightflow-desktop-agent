@@ -4,7 +4,30 @@ import type { InstalledProviderInfo, ProviderBundleManifest } from './provider-b
 import type { ProviderProductionTrustDecision } from './provider-security/provider-production-gate'
 import type { RedactionExportSummary } from '../core/redaction-export-summary'
 
-export type ProviderLifecycleAction = 'provider_install' | 'provider_update' | 'provider_rollback'
+export type ProviderLifecycleAction =
+  | 'provider_install'
+  | 'provider_update'
+  | 'provider_rollback'
+  | 'provider_recovery_reconciliation'
+
+export type ProviderRecoveryDecision =
+  | 'recovery_not_needed'
+  | 'recovery_reconciled'
+  | 'recovery_blocked'
+  | 'recovery_rollback_to_previous'
+  | 'recovery_fallback_builtin'
+
+export interface ProviderRecoverySafeSummary {
+  providerId?: string
+  version?: string
+  trustLevel?: 'builtin' | 'trusted_signed' | 'debug_only' | 'blocked'
+  productionInstallAllowed?: boolean
+  hasSettingsInstalled?: boolean
+  hasLifecyclePointer?: boolean
+  hasPreviousPointer?: boolean
+  manifestUrlOrigin?: string
+  manifestUrlHasRedactedQuery?: boolean
+}
 
 export interface ProviderLifecycleAuditInput {
   action: ProviderLifecycleAction
@@ -15,6 +38,21 @@ export interface ProviderLifecycleAuditInput {
   gate?: ProviderProductionTrustDecision | null
   error?: string
   previousInstalled?: InstalledProviderInfo | null
+}
+
+export interface ProviderRecoveryReconciliationAuditInput {
+  success: boolean
+  decision: ProviderRecoveryDecision
+  reasonCodes: string[]
+  providerId?: string
+  settingsProviderId?: string
+  settingsVersion?: string
+  lifecycleActiveVersion?: string
+  previousTrustedVersion?: string
+  inconsistencyType?: string
+  beforeSummary?: ProviderRecoverySafeSummary
+  afterSummary?: ProviderRecoverySafeSummary
+  redactionExportSummary?: RedactionExportSummary
 }
 
 export function recordProviderLifecycleAudit(
@@ -47,6 +85,42 @@ export function recordProviderLifecycleAudit(
       error: redactSensitiveProviderText(input.error),
       redaction: 'provider lifecycle audit excludes provider config values and bundle contents',
       redactionExportSummary: buildProviderLifecycleRedactionSummary(input)
+    }
+  })
+}
+
+export function recordProviderRecoveryReconciliationAudit(
+  auditStore: Pick<AuditStore, 'record'>,
+  input: ProviderRecoveryReconciliationAuditInput
+): void {
+  auditStore.record({
+    category: 'provider',
+    action: 'provider_recovery_reconciliation',
+    source: 'recovery_reconciliation',
+    severity: input.success ? 'info' : ('warn' satisfies AuditSeverity),
+    message: input.success
+      ? 'provider recovery reconciliation completed'
+      : 'provider recovery reconciliation blocked or failed',
+    metadata: {
+      success: input.success,
+      providerId: safeScalar(input.providerId),
+      settingsProviderId: safeScalar(input.settingsProviderId),
+      settingsVersion: safeScalar(input.settingsVersion),
+      lifecycleActiveVersion: safeScalar(input.lifecycleActiveVersion),
+      previousTrustedVersion: safeScalar(input.previousTrustedVersion),
+      inconsistencyType: safeScalar(input.inconsistencyType),
+      decision: input.decision,
+      reasonCodes: input.reasonCodes.map(safeScalar).filter((item) => item !== undefined),
+      beforeSummary: sanitizeRecoverySummary(input.beforeSummary),
+      afterSummary: sanitizeRecoverySummary(input.afterSummary),
+      redaction: 'provider recovery audit excludes provider config values, bundle contents, URL query, and local paths',
+      redactionExportSummary: input.redactionExportSummary ?? {
+        status: 'passed',
+        blockedTypes: [],
+        omittedFieldPaths: [],
+        unknownFieldCount: 0,
+        checkedAt: new Date().toISOString()
+      }
     }
   })
 }
@@ -102,4 +176,34 @@ function redactSensitiveProviderText(value: string | undefined): string | undefi
     /(api[-_]?key|authorization|bearer|token|secret|password)=([^&\s]+)/gi,
     '$1=[REDACTED]'
   )
+}
+
+function sanitizeRecoverySummary(
+  value: ProviderRecoverySafeSummary | undefined
+): ProviderRecoverySafeSummary | undefined {
+  if (!value) return undefined
+  return {
+    providerId: safeScalar(value.providerId),
+    version: safeScalar(value.version),
+    trustLevel: value.trustLevel,
+    productionInstallAllowed: value.productionInstallAllowed,
+    hasSettingsInstalled: value.hasSettingsInstalled,
+    hasLifecyclePointer: value.hasLifecyclePointer,
+    hasPreviousPointer: value.hasPreviousPointer,
+    manifestUrlOrigin: safeOrigin(value.manifestUrlOrigin),
+    manifestUrlHasRedactedQuery: value.manifestUrlHasRedactedQuery
+  }
+}
+
+function safeOrigin(value: string | undefined): string | undefined {
+  if (!value) return undefined
+  try {
+    return new URL(value).origin
+  } catch {
+    return safeScalar(value)
+  }
+}
+
+function safeScalar(value: string | undefined): string | undefined {
+  return redactSensitiveProviderText(redactProviderUrl(value))
 }

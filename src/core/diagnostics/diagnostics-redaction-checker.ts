@@ -5,7 +5,7 @@ import {
 
 const RAW_SCREENSHOT_KEY = /(raw|full).*screenshot|screenshot.*(raw|full)|imageBytes|rawImage/i
 const BASE64_KEY = /base64|dataUrl|data:image/i
-const FULL_CHAT_KEY = /fullChat|chatTranscript|ocrText|messageText|pendingText/i
+const FULL_CHAT_KEY = /fullChat|chatTranscript|ocrText|messageText|pendingText|fullConversation/i
 const PLAINTEXT_CONTACT_KEY = /currentContact|contactName|displayName|phone|email|address|avatar|qrCode/i
 const FULL_PROFILE_KEY =
   /customerProfile|profileFields|preferenceNotes|businessContext|doNotMention|lastConfirmedSummary/i
@@ -19,6 +19,7 @@ const PHONE_PATTERN = /(?:\+\d[\d\s().-]{7,}\d|\b\d{3,4}[-.\s]\d{3,4}[-.\s]\d{3,
 const SECRET_VALUE_PATTERN =
   /(Bearer\s+[A-Za-z0-9._-]+|sk-[A-Za-z0-9_-]+|(?:api[-_]?key|token|secret|password)[:=]\s*[A-Za-z0-9._-]+)/i
 const URL_QUERY_SECRET_PATTERN = /https?:\/\/\S+[?&](token|secret|api_key|apikey|key)=/i
+const LOCAL_PATH_PATTERN = /(?:\/Users\/|\/home\/|\/workspace\/|[A-Z]:\\)/i
 
 export interface DiagnosticsRedactionCheckOptions {
   now?: () => Date
@@ -72,7 +73,13 @@ export function checkDiagnosticsRedaction(
     if (DATA_IMAGE_PATTERN.test(text)) add('base64', path)
     if (LONG_BASE64_PATTERN.test(text)) add('base64', path)
     if (EMAIL_PATTERN.test(text) || PHONE_PATTERN.test(text)) add('plaintext_contact', path)
-    if (SECRET_VALUE_PATTERN.test(text) || URL_QUERY_SECRET_PATTERN.test(text)) add('secrets', path)
+    if (
+      SECRET_VALUE_PATTERN.test(text) ||
+      URL_QUERY_SECRET_PATTERN.test(text) ||
+      LOCAL_PATH_PATTERN.test(text)
+    ) {
+      add('secrets', path)
+    }
   }
 
   function add(type: DiagnosticsBlockedType, path: string): void {

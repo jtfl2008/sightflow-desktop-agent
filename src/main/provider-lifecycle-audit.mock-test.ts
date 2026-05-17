@@ -1,7 +1,10 @@
 import * as assert from 'node:assert/strict'
 import { AuditRecord } from './audit-types'
 import { AuditStore } from './audit-store'
-import { recordProviderLifecycleAudit } from './provider-lifecycle-audit'
+import {
+  recordProviderLifecycleAudit,
+  recordProviderRecoveryReconciliationAudit
+} from './provider-lifecycle-audit'
 
 class MemoryAuditBackend {
   private records: AuditRecord[] = []
@@ -263,11 +266,68 @@ function testProviderLifecycleRedactionSummaryCheckedAtStrictExport(): void {
   )
 }
 
+function testProviderRecoveryReconciliationAuditRedaction(): void {
+  const store = new AuditStore({ backend: new MemoryAuditBackend(), now: fixedNow })
+  recordProviderRecoveryReconciliationAudit(store, {
+    success: false,
+    decision: 'recovery_fallback_builtin',
+    reasonCodes: [
+      'provider.recovery.settings_untrusted_unsigned',
+      'provider.recovery.redacted_manifest_url_query'
+    ],
+    providerId: 'custom-provider',
+    settingsProviderId: 'custom-provider',
+    settingsVersion: '1.0.0',
+    lifecycleActiveVersion: '1.0.0',
+    inconsistencyType: 'settings_points_to_untrusted_provider',
+    beforeSummary: {
+      providerId: 'custom-provider',
+      version: '1.0.0',
+      trustLevel: 'blocked',
+      productionInstallAllowed: false,
+      hasSettingsInstalled: true,
+      hasLifecyclePointer: true,
+      manifestUrlOrigin: 'https://providers.example/manifest.json?token=super-secret-token',
+      manifestUrlHasRedactedQuery: true
+    },
+    afterSummary: {
+      providerId: 'builtin-doubao',
+      trustLevel: 'builtin',
+      productionInstallAllowed: true,
+      hasSettingsInstalled: false,
+      hasLifecyclePointer: false
+    },
+    redactionExportSummary: {
+      status: 'blocked',
+      blockedTypes: ['secrets'],
+      omittedFieldPaths: ['manifestUrl.search'],
+      unknownFieldCount: 0,
+      checkedAt: fixedNow().toISOString()
+    }
+  })
+
+  const records = store.getRecent(10)
+  assert.equal(records.length, 1)
+  assert.equal(records[0].source, 'recovery_reconciliation')
+  assert.equal(records[0].action, 'provider_recovery_reconciliation')
+
+  const exported = store.exportJson()
+  const parsed = JSON.parse(exported)
+  assert.equal(exported.includes('super-secret-token'), false)
+  assert.equal(exported.includes('provider_recovery_reconciliation'), true)
+  assert.equal(exported.includes('recovery_reconciliation'), true)
+  assert.equal(exported.includes('recovery_fallback_builtin'), true)
+  assert.equal(parsed.records[0].metadata.beforeSummary.manifestUrlOrigin, 'https://providers.example')
+  assert.equal(parsed.records[0].metadata.beforeSummary.manifestUrlHasRedactedQuery, true)
+  assert.ok(parsed.records[0].metadata.redactionExportSummary.blockedTypes.includes('secrets'))
+}
+
 function main(): void {
   testProviderLifecycleAuditRedaction()
   testProviderLifecycleRedactionSummaryStrictExport()
   testProviderLifecycleRedactionSummaryArrayScalarStrictExport()
   testProviderLifecycleRedactionSummaryCheckedAtStrictExport()
+  testProviderRecoveryReconciliationAuditRedaction()
   console.log('provider lifecycle audit mock tests passed')
 }
 

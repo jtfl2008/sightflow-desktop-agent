@@ -51,6 +51,8 @@ const ALLOWED_NESTED_OBJECT_PREFIXES = [
 const CUSTOMER_PROFILE_SOURCE_SUMMARY_PATH = 'metadata.customerProfile.sourceSummary'
 const CUSTOMER_PROFILE_PATH = 'metadata.customerProfile'
 const REDACTION_EXPORT_SUMMARY_PATH = 'metadata.redactionExportSummary'
+const RECOVERY_BEFORE_SUMMARY_PATH = 'metadata.beforeSummary'
+const RECOVERY_AFTER_SUMMARY_PATH = 'metadata.afterSummary'
 const SAFE_CUSTOMER_PROFILE_KEYS = new Set([
   'profileId',
   'version',
@@ -82,6 +84,17 @@ const SAFE_OMITTED_FIELD_PATH_PATTERN = /^[A-Za-z0-9_$.[\]-]+$/
 const MAX_OMITTED_FIELD_PATH_LENGTH = 160
 const SAFE_ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/
 const MAX_CHECKED_AT_LENGTH = 32
+const SAFE_RECOVERY_SUMMARY_KEYS = new Set([
+  'providerId',
+  'version',
+  'trustLevel',
+  'productionInstallAllowed',
+  'hasSettingsInstalled',
+  'hasLifecyclePointer',
+  'hasPreviousPointer',
+  'manifestUrlOrigin',
+  'manifestUrlHasRedactedQuery'
+])
 
 export function buildRedactedAuditExport(
   value: AuditExport,
@@ -200,6 +213,12 @@ function redactValue(
   if (normalizedPath === REDACTION_EXPORT_SUMMARY_PATH) {
     return redactRedactionExportSummary(value, recordPath, state)
   }
+  if (
+    normalizedPath === RECOVERY_BEFORE_SUMMARY_PATH ||
+    normalizedPath === RECOVERY_AFTER_SUMMARY_PATH
+  ) {
+    return redactRecoverySafeSummary(value, recordPath, state)
+  }
   if (typeof value === 'string') return sanitizeString(value, recordPath, state)
   if (typeof value === 'number' || typeof value === 'boolean') return value
   if (Array.isArray(value)) {
@@ -260,6 +279,39 @@ function redactCustomerProfile(value: unknown, recordPath: string, state: Redact
     if (redacted !== undefined) out[key] = redacted
   }
   return out
+}
+
+function redactRecoverySafeSummary(
+  value: unknown,
+  recordPath: string,
+  state: RedactionState
+): unknown {
+  if (!isPlainRecord(value)) {
+    addUnknownNestedObject(state, recordPath)
+    return undefined
+  }
+
+  const out: Record<string, unknown> = {}
+  for (const [key, child] of Object.entries(value)) {
+    const childPath = `${recordPath}.${key}`
+    if (!SAFE_RECOVERY_SUMMARY_KEYS.has(key)) {
+      if (typeof child === 'string') sanitizeString(child, childPath, state)
+      const blockedType = blockedTypeForPath(`metadata.${key}`)
+      if (blockedType) addBlocked(state, blockedType, childPath)
+      addUnknownNestedObject(state, childPath)
+      continue
+    }
+    if (isSafeRecoverySummaryScalar(child)) {
+      out[key] = typeof child === 'string' ? sanitizeString(child, childPath, state) : child
+    } else {
+      addUnknownNestedObject(state, childPath)
+    }
+  }
+  return out
+}
+
+function isSafeRecoverySummaryScalar(value: unknown): value is string | boolean | null {
+  return value === null || typeof value === 'string' || typeof value === 'boolean'
 }
 
 function redactCustomerProfileSafeField(
