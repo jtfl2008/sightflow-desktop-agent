@@ -131,7 +131,9 @@ function testForbiddenContentReturnsExportSummary(): void {
   assert.ok(parsed.redaction.omittedFieldPaths.includes('records[0].message'))
   assert.ok(parsed.redaction.omittedFieldPaths.includes('records[0].metadata.webhookBody'))
   assert.ok(parsed.redaction.omittedFieldPaths.includes('records[0].metadata.providerConfig'))
-  assert.ok(parsed.redaction.omittedFieldPaths.includes('records[0].metadata.customerProfile.fields'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes('records[0].metadata.customerProfile.fields')
+  )
 }
 
 function testRawBackendSourceSummaryExportRedaction(): void {
@@ -263,9 +265,7 @@ function testRawBackendCustomerProfileScalarExportRedaction(): void {
   assert.equal(parsed.redaction.unknownFieldCount, 0)
   assert.ok(parsed.redaction.blockedTypes.includes('full_profile'))
   assert.ok(
-    parsed.redaction.omittedFieldPaths.includes(
-      'records[0].metadata.customerProfile.favoriteColor'
-    )
+    parsed.redaction.omittedFieldPaths.includes('records[0].metadata.customerProfile.favoriteColor')
   )
   assert.ok(
     parsed.redaction.omittedFieldPaths.includes('records[0].metadata.customerProfile.notes')
@@ -392,9 +392,7 @@ function testRedactionExportSummaryNestedObjectBlocksRecords(): void {
     )
   )
   assert.ok(
-    parsed.redaction.omittedFieldPaths.includes(
-      'records[0].metadata.redactionExportSummary.extra'
-    )
+    parsed.redaction.omittedFieldPaths.includes('records[0].metadata.redactionExportSummary.extra')
   )
 }
 

@@ -103,7 +103,9 @@ function testProviderLifecycleAuditRedaction(): void {
   assert.equal(exported.includes('trusted_signed'), true)
   assert.equal(exported.includes('provider.bundle.js'), true)
   assert.ok(
-    parsed.records.every((record: any) => record.metadata.redactionExportSummary.status === 'blocked')
+    parsed.records.every(
+      (record: any) => record.metadata.redactionExportSummary.status === 'blocked'
+    )
   )
   assert.ok(
     parsed.records.every((record: any) =>
@@ -159,9 +161,7 @@ function testProviderLifecycleRedactionSummaryStrictExport(): void {
   assert.equal(parsed.redaction.unknownFieldCount, 2)
   assert.ok(parsed.redaction.blockedTypes.includes('unknown_nested_object'))
   assert.ok(
-    parsed.redaction.omittedFieldPaths.includes(
-      'records[0].metadata.redactionExportSummary.extra'
-    )
+    parsed.redaction.omittedFieldPaths.includes('records[0].metadata.redactionExportSummary.extra')
   )
   assert.ok(
     parsed.redaction.omittedFieldPaths.includes(

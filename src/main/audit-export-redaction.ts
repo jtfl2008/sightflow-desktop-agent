@@ -1,5 +1,8 @@
 import { AuditExport, AuditRecord } from './audit-types'
-import type { RedactionExportBlockedType, RedactionExportSummary } from '../core/redaction-export-summary'
+import type {
+  RedactionExportBlockedType,
+  RedactionExportSummary
+} from '../core/redaction-export-summary'
 import { isDiagnosticsContactHash } from '../core/diagnostics/diagnostics-contact-hash'
 
 export type AuditExportBlockedType = RedactionExportBlockedType
@@ -12,10 +15,12 @@ export interface RedactedAuditExport extends AuditExport {
 
 const REDACTED = '[REDACTED]'
 
-const RAW_SCREENSHOT_KEY = /(raw|full).*screenshot|screenshot.*(raw|full)|imageBytes|rawImage|screenshot|image/i
+const RAW_SCREENSHOT_KEY =
+  /(raw|full).*screenshot|screenshot.*(raw|full)|imageBytes|rawImage|screenshot|image/i
 const BASE64_KEY = /base64|dataUrl|data:image/i
 const FULL_CHAT_KEY = /fullChat|chatTranscript|ocrText|messageText|pendingText|fullConversation/i
-const PLAINTEXT_CONTACT_KEY = /currentContact|contactName|displayName|phone|email|address|avatar|qrCode/i
+const PLAINTEXT_CONTACT_KEY =
+  /currentContact|contactName|displayName|phone|email|address|avatar|qrCode/i
 const FULL_PROFILE_KEY =
   /customerProfile\.fields|profileFields|preferenceNotes|businessContext|doNotMention|lastConfirmedSummary|pendingSuggestion/i
 const PROVIDER_CONFIG_KEY =
@@ -114,7 +119,10 @@ export function formatAuditExportMarkdown(value: RedactedAuditExport): string {
   ]
 
   if (value.blocked) {
-    lines.push('Export blocked: unknown nested fields were found outside the audit export allowlist.', '')
+    lines.push(
+      'Export blocked: unknown nested fields were found outside the audit export allowlist.',
+      ''
+    )
     return `${lines.join('\n')}\n`
   }
 
@@ -193,7 +201,9 @@ function redactValue(
   if (typeof value === 'number' || typeof value === 'boolean') return value
   if (Array.isArray(value)) {
     return value
-      .map((item, index) => redactValue(item, `${recordPath}[${index}]`, `${normalizedPath}.`, state))
+      .map((item, index) =>
+        redactValue(item, `${recordPath}[${index}]`, `${normalizedPath}.`, state)
+      )
       .filter((item) => item !== undefined)
   }
   if (!isPlainRecord(value)) return sanitizeString(String(value), recordPath, state)
@@ -219,11 +229,7 @@ function redactValue(
   return out
 }
 
-function redactCustomerProfile(
-  value: unknown,
-  recordPath: string,
-  state: RedactionState
-): unknown {
+function redactCustomerProfile(value: unknown, recordPath: string, state: RedactionState): unknown {
   if (!isPlainRecord(value)) {
     addBlocked(state, 'full_profile', recordPath)
     return undefined
@@ -333,7 +339,10 @@ function redactBlockedTypesArray(
   const out: RedactionExportBlockedType[] = []
   value.forEach((item, index) => {
     const itemPath = `${recordPath}[${index}]`
-    if (typeof item !== 'string' || !REDACTION_EXPORT_BLOCKED_TYPES.has(item as RedactionExportBlockedType)) {
+    if (
+      typeof item !== 'string' ||
+      !REDACTION_EXPORT_BLOCKED_TYPES.has(item as RedactionExportBlockedType)
+    ) {
       addUnknownNestedObject(state, itemPath)
       return
     }
@@ -461,11 +470,7 @@ function addUnknownNestedObject(state: RedactionState, path: string): void {
   addBlocked(state, 'unknown_nested_object', path)
 }
 
-function addBlocked(
-  state: RedactionState,
-  type: AuditExportBlockedType,
-  path: string
-): void {
+function addBlocked(state: RedactionState, type: AuditExportBlockedType, path: string): void {
   state.blockedTypes.add(type)
   state.omittedFieldPaths.add(path)
 }

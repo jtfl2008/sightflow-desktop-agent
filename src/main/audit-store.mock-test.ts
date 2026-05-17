@@ -179,9 +179,7 @@ function testRawBackendCustomerProfileScalarExportRedaction(): void {
   assert.equal(parsed.redaction.unknownFieldCount, 0)
   assert.ok(parsed.redaction.blockedTypes.includes('full_profile'))
   assert.ok(
-    parsed.redaction.omittedFieldPaths.includes(
-      'records[0].metadata.customerProfile.favoriteColor'
-    )
+    parsed.redaction.omittedFieldPaths.includes('records[0].metadata.customerProfile.favoriteColor')
   )
   assert.ok(
     parsed.redaction.omittedFieldPaths.includes(
@@ -232,9 +230,7 @@ function testRedactionExportSummaryStrictExportRedaction(): void {
   assert.equal(parsed.redaction.unknownFieldCount, 2)
   assert.ok(parsed.redaction.blockedTypes.includes('unknown_nested_object'))
   assert.ok(
-    parsed.redaction.omittedFieldPaths.includes(
-      'records[0].metadata.redactionExportSummary.extra'
-    )
+    parsed.redaction.omittedFieldPaths.includes('records[0].metadata.redactionExportSummary.extra')
   )
   assert.ok(
     parsed.redaction.omittedFieldPaths.includes(
