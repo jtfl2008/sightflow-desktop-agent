@@ -1,7 +1,7 @@
-import Store from 'electron-store'
+import { createRequire } from 'node:module'
 import { AuditEventInput, AuditExport, AuditRecord } from './audit-types'
 
-const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
+const nodeRequire = createRequire(__filename)
 
 interface AuditStoreBackend {
   get(key: 'records'): AuditRecord[] | undefined
@@ -27,12 +27,7 @@ export class AuditStore {
 
   constructor(options: AuditStoreOptions = {}) {
     this.maxRecords = options.maxRecords ?? DEFAULT_MAX_RECORDS
-    this.backend =
-      options.backend ??
-      (new StoreClass({
-        name: 'audit-log',
-        defaults: { records: [] }
-      }) as unknown as AuditStoreBackend)
+    this.backend = options.backend ?? createElectronStoreBackend()
     this.now = options.now ?? (() => new Date())
   }
 
@@ -124,4 +119,17 @@ function sanitizeString(value: string): string {
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function createElectronStoreBackend(): AuditStoreBackend {
+  const storeModule = nodeRequire('electron-store') as {
+    default?: new (options: Record<string, unknown>) => unknown
+  }
+  const StoreClass =
+    storeModule.default ??
+    (storeModule as unknown as new (options: Record<string, unknown>) => unknown)
+  return new StoreClass({
+    name: 'audit-log',
+    defaults: { records: [] }
+  }) as AuditStoreBackend
 }
