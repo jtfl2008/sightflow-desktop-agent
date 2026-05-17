@@ -13,6 +13,20 @@ export type ProviderEvent =
   | { type: 'skip' }
   | { type: 'error'; error: string }
 
+export type ReplyReviewMode = 'auto_send' | 'draft_review'
+
+export type ReplyDraftStatus = 'pending' | 'approved' | 'skipped' | 'takeover'
+
+export interface ReplyDraft {
+  id: string
+  content: string
+  appType: AppType
+  screenshot: string
+  status: ReplyDraftStatus
+  createdAt: number
+  resolvedAt?: number
+}
+
 export type SessionEvent =
   | { type: 'bootstrap' }
   | { type: 'observe_chat' }
@@ -20,6 +34,9 @@ export type SessionEvent =
   | { type: 'provider.reply_text'; content: string }
   | { type: 'provider.skip' }
   | { type: 'provider.error'; error: string }
+  | { type: 'draft.approve'; draftId: string }
+  | { type: 'draft.skip'; draftId: string }
+  | { type: 'draft.takeover'; draftId: string }
   | { type: 'check_unread' }
   | { type: 'wait_retry'; reason?: string; delayMs?: number }
 

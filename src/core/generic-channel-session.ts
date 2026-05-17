@@ -6,25 +6,46 @@
 // 里，使 channel session 在不同设备之间真正可复用。
 
 import { DesktopDevice } from './device'
-import { ChannelContext, ChannelSession, ProviderEvent, SessionEvent } from './session-types'
+import {
+  ChannelContext,
+  ChannelSession,
+  ProviderEvent,
+  ReplyDraft,
+  ReplyReviewMode,
+  SessionEvent
+} from './session-types'
 
 export interface GenericChannelState {
   measuredAt: number | null
   latestChatBaseline: number | null
+  replyDrafts: ReplyDraft[]
+  activeDraftId: string | null
+  lastProviderScreenshot: string | null
 }
 
 export function createInitialGenericChannelState(): GenericChannelState {
   return {
     measuredAt: null,
-    latestChatBaseline: null
+    latestChatBaseline: null,
+    replyDrafts: [],
+    activeDraftId: null,
+    lastProviderScreenshot: null
   }
+}
+
+interface GenericChannelSessionOptions {
+  replyMode?: ReplyReviewMode
 }
 
 export class GenericChannelSession implements ChannelSession<GenericChannelState> {
   private readonly retryDelayMs = 5000
   private consecutiveUnreadFailures = 0
+  private draftSequence = 0
 
-  constructor(private readonly device: DesktopDevice) {}
+  constructor(
+    private readonly device: DesktopDevice,
+    private readonly options: GenericChannelSessionOptions = {}
+  ) {}
 
   async onStart(ctx: ChannelContext<GenericChannelState>): Promise<void> {
     this.device.setAppType(ctx.appType)
@@ -64,6 +85,7 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
 
       case 'observe_chat': {
         const screenshot = await this.device.screenshot()
+        ctx.state.lastProviderScreenshot = screenshot
         void this.forwardProviderEvents(screenshot, ctx)
         break
       }
@@ -73,11 +95,7 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
         break
 
       case 'provider.reply_text':
-        await this.device.sendMessage(event.content)
-        ctx.host.log('reply', event.content)
-        await this.device.setChatBaseline()
-        ctx.state.latestChatBaseline = Date.now()
-        ctx.host.enqueue({ type: 'check_unread' })
+        await this.handleReplyText(event.content, ctx)
         break
 
       case 'provider.skip':
@@ -94,6 +112,18 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
           reason: 'provider_error',
           delayMs: this.retryDelayMs
         })
+        break
+
+      case 'draft.approve':
+        await this.resolveDraft(event.draftId, 'approved', ctx)
+        break
+
+      case 'draft.skip':
+        await this.resolveDraft(event.draftId, 'skipped', ctx)
+        break
+
+      case 'draft.takeover':
+        await this.resolveDraft(event.draftId, 'takeover', ctx)
         break
 
       case 'check_unread': {
@@ -190,9 +220,88 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
     }
   }
 
+  private async handleReplyText(
+    content: string,
+    ctx: ChannelContext<GenericChannelState>
+  ): Promise<void> {
+    if (this.getReplyMode() === 'auto_send') {
+      await this.sendReplyAndContinue(content, ctx)
+      return
+    }
+
+    const draft = this.createReplyDraft(content, ctx)
+    ctx.state.replyDrafts.push(draft)
+    ctx.state.activeDraftId = draft.id
+    ctx.host.log('thinking', `已生成待确认回复草稿: ${draft.id}`)
+  }
+
+  private async resolveDraft(
+    draftId: string,
+    status: 'approved' | 'skipped' | 'takeover',
+    ctx: ChannelContext<GenericChannelState>
+  ): Promise<void> {
+    const draft = ctx.state.replyDrafts.find((item) => item.id === draftId)
+    if (!draft || draft.status !== 'pending') {
+      ctx.host.log('skip', `草稿不可处理或已处理: ${draftId}`)
+      return
+    }
+
+    draft.status = status
+    draft.resolvedAt = Date.now()
+    if (ctx.state.activeDraftId === draftId) {
+      ctx.state.activeDraftId = null
+    }
+
+    if (status === 'approved') {
+      await this.sendReplyAndContinue(draft.content, ctx)
+      return
+    }
+
+    if (status === 'skipped') {
+      ctx.host.log('skip', '已跳过回复草稿')
+      await this.device.setChatBaseline()
+      ctx.state.latestChatBaseline = Date.now()
+      ctx.host.enqueue({ type: 'check_unread' })
+      return
+    }
+
+    ctx.host.log('skip', '已接管当前会话，自动回复暂停')
+    await ctx.host.stopSession('draft_takeover')
+  }
+
+  private async sendReplyAndContinue(
+    content: string,
+    ctx: ChannelContext<GenericChannelState>
+  ): Promise<void> {
+    await this.device.sendMessage(content)
+    ctx.host.log('reply', content)
+    await this.device.setChatBaseline()
+    ctx.state.latestChatBaseline = Date.now()
+    ctx.host.enqueue({ type: 'check_unread' })
+  }
+
+  private createReplyDraft(content: string, ctx: ChannelContext<GenericChannelState>): ReplyDraft {
+    this.draftSequence += 1
+    return {
+      id: `draft-${Date.now()}-${this.draftSequence}`,
+      content,
+      appType: ctx.appType,
+      screenshot: ctx.state.lastProviderScreenshot || '',
+      status: 'pending',
+      createdAt: Date.now()
+    }
+  }
+
+  private getReplyMode(): ReplyReviewMode {
+    return this.options.replyMode || 'auto_send'
+  }
+
   private resetState(state: GenericChannelState): void {
     state.measuredAt = null
     state.latestChatBaseline = null
+    state.replyDrafts = []
+    state.activeDraftId = null
+    state.lastProviderScreenshot = null
   }
 
   private async tryOpenUnreadConversation(

@@ -73,6 +73,10 @@ export class RuntimeHost<TState> {
     return this.running
   }
 
+  dispatch(event: SessionEvent): void {
+    this.enqueue(event)
+  }
+
   updateAppType(appType: AppType): void {
     this.context.appType = appType
   }
