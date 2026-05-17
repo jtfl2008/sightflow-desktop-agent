@@ -24,6 +24,7 @@ interface RecoveryFixtureIndex {
 const FIXTURE_ROOT = join(process.cwd(), 'fixtures/provider-recovery')
 const REQUIRED_CASE_IDS = new Set([
   'lifecycle-active-settings-missing',
+  'lifecycle-active-settings-missing-missing-source',
   'settings-trusted-lifecycle-missing',
   'unsigned',
   'debug-only',
@@ -40,6 +41,7 @@ const REQUIRED_CASE_IDS = new Set([
 ])
 const NEGATIVE_CASE_IDS = new Set([
   'unsigned',
+  'lifecycle-active-settings-missing-missing-source',
   'debug-only',
   'tampered',
   'sha256-mismatch',

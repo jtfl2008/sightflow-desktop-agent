@@ -13,11 +13,27 @@
         },
         "versionsByProviderId": {
           "trusted-provider": {
-            "1.0.0": { "providerId": "trusted-provider", "version": "1.0.0", "manifestPath": "providers/trusted-provider/1.0.0/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "trusted_signed", "lifecycleState": "active" }
+            "1.0.0": { "providerId": "trusted-provider", "version": "1.0.0", "manifestPath": "providers/trusted-provider/1.0.0/manifest.json", "sourceUrl": "https://fixtures.local/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "trusted_signed", "lifecycleState": "active" }
           }
         }
       },
       "expectedAfter": { "decision": "recovery_reconciled", "productionVisible": true, "activeProviderId": "trusted-provider", "activeVersion": "1.0.0", "reasonCodes": ["provider.recovery.lifecycle_active_trusted_settings_missing"] }
+    },
+    {
+      "id": "lifecycle-active-settings-missing-missing-source",
+      "title": "lifecycle active without persisted source provenance falls back",
+      "settingsBefore": { "chatProvider": { "installed": null, "manifestUrlOrigin": null, "manifestUrlHasRedactedQuery": false } },
+      "providerLifecycleBefore": {
+        "activePointersByProviderId": {
+          "trusted-provider": { "providerId": "trusted-provider", "activeVersion": "1.0.0", "rollbackEligible": false, "updatedAt": "2026-05-17T00:00:00.000Z" }
+        },
+        "versionsByProviderId": {
+          "trusted-provider": {
+            "1.0.0": { "providerId": "trusted-provider", "version": "1.0.0", "manifestPath": "providers/trusted-provider/1.0.0/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "trusted_signed", "lifecycleState": "active" }
+          }
+        }
+      },
+      "expectedAfter": { "decision": "recovery_fallback_builtin", "productionVisible": false, "activeProviderId": "builtin-doubao", "reasonCodes": ["provider.recovery.active_pointer_missing_source_provenance", "provider.recovery.fallback_builtin"] }
     },
     {
       "id": "settings-trusted-lifecycle-missing",
@@ -111,7 +127,7 @@
       "settingsBefore": { "chatProvider": { "installed": { "id": "blocked-provider", "version": "2.0.0" }, "manifestUrlOrigin": "https://fixtures.local", "manifestUrlHasRedactedQuery": false } },
       "providerLifecycleBefore": {
         "activePointersByProviderId": { "blocked-provider": { "providerId": "blocked-provider", "activeVersion": "2.0.0", "rollbackEligible": false, "updatedAt": "2026-05-17T00:00:00.000Z" } },
-        "versionsByProviderId": { "blocked-provider": { "2.0.0": { "providerId": "blocked-provider", "version": "2.0.0", "manifestPath": "providers/blocked-provider/2.0.0/manifest.json", "artifactHashes": {}, "trustLevel": "blocked", "lifecycleState": "active" } } }
+        "versionsByProviderId": { "blocked-provider": { "2.0.0": { "providerId": "blocked-provider", "version": "2.0.0", "manifestPath": "providers/blocked-provider/2.0.0/manifest.json", "sourceUrl": "https://fixtures.local/manifest.json", "artifactHashes": {}, "trustLevel": "blocked", "lifecycleState": "active" } } }
       },
       "expectedAfter": { "decision": "recovery_fallback_builtin", "productionVisible": false, "activeProviderId": "builtin-doubao", "reasonCodes": ["provider.recovery.active_pointer_gate_denied", "provider.recovery.previous_pointer_missing", "provider.recovery.fallback_builtin"] }
     },
@@ -121,7 +137,7 @@
       "settingsBefore": { "chatProvider": { "installed": { "id": "trusted-provider", "version": "1.0.0" }, "manifestUrlOrigin": "https://fixtures.local", "manifestUrlHasRedactedQuery": false } },
       "providerLifecycleBefore": {
         "activePointersByProviderId": { "trusted-provider": { "providerId": "trusted-provider", "activeVersion": "1.0.0", "rollbackEligible": false, "updatedAt": "2026-05-17T00:00:00.000Z" } },
-        "versionsByProviderId": { "trusted-provider": { "1.0.0": { "providerId": "trusted-provider", "version": "1.0.0", "manifestPath": "providers/trusted-provider/1.0.0/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "trusted_signed", "lifecycleState": "active" } } }
+        "versionsByProviderId": { "trusted-provider": { "1.0.0": { "providerId": "trusted-provider", "version": "1.0.0", "manifestPath": "providers/trusted-provider/1.0.0/manifest.json", "sourceUrl": "https://fixtures.local/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "trusted_signed", "lifecycleState": "active" } } }
       },
       "expectedAfter": { "decision": "recovery_reconciled", "productionVisible": true, "activeProviderId": "trusted-provider", "activeVersion": "1.0.0", "reasonCodes": ["provider.recovery.audit_gap_detected"] }
     },

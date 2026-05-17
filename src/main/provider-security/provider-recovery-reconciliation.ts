@@ -100,6 +100,24 @@ export async function reconcileProviderLifecycleWithSettings<TSettings extends P
     activePointer && activeRecord
       ? await loadLifecycleCandidate(options, activePointer.providerId, activePointer.activeVersion, activeRecord)
       : null
+  const activeSourceReason =
+    activeCandidate && activeRecord
+      ? untrustedProviderSourceReason(activeCandidate.sourceUrl || activeRecord.sourceUrl)
+      : null
+  if (activeCandidate && activeRecord && activeSourceReason) {
+    reasonCodes.add(
+      activeSourceReason === 'missing'
+        ? 'provider.recovery.active_pointer_missing_source_provenance'
+        : 'provider.recovery.active_pointer_untrusted_source'
+    )
+    return fallbackToBuiltin(options, state, beforeSummary, reasonCodes, checkedAt, {
+      providerId: activeCandidate.installed.id,
+      settingsProviderId: options.settings.chatProvider.installed?.id,
+      settingsVersion: options.settings.chatProvider.installed?.version,
+      lifecycleActiveVersion: activePointer?.activeVersion,
+      inconsistencyType: 'active_pointer_untrusted_source'
+    })
+  }
   const activeGate = activeCandidate
     ? await evaluateCandidateGate(options, activeCandidate)
     : null
@@ -578,12 +596,16 @@ function hasUrlQuery(value: string): boolean {
 }
 
 function isTrustedProviderSourceUrl(value: unknown): boolean {
-  if (typeof value !== 'string' || !value.trim()) return false
+  return untrustedProviderSourceReason(value) === null
+}
+
+function untrustedProviderSourceReason(value: unknown): 'missing' | 'untrusted' | null {
+  if (typeof value !== 'string' || !value.trim()) return 'missing'
   try {
     const protocol = new URL(value).protocol
-    return protocol === 'https:' || protocol === 'file:' || protocol === 'builtin:'
+    return protocol === 'https:' || protocol === 'file:' || protocol === 'builtin:' ? null : 'untrusted'
   } catch {
-    return false
+    return 'untrusted'
   }
 }
 
