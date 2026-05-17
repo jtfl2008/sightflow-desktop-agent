@@ -10,7 +10,7 @@ interface LogEntry {
 }
 
 type EngineStatus = 'idle' | 'running' | 'error'
-type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge' | 'intent' | 'channel'
+type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge' | 'intent' | 'channel' | 'memory'
 type AppType = 'wechat' | 'wework' | 'dingtalk' | 'lark' | 'slack' | 'telegram' | 'generic'
 
 type CaptureStrategy = 'auto' | 'vlm' | 'box-select'
@@ -149,6 +149,33 @@ interface ReplyDraft {
   policyReasons?: string[]
   createdAt: number
   resolvedAt?: number
+}
+
+interface CustomerMemorySettings {
+  enabled: boolean
+  defaultRetentionDays: 30 | 90 | 180
+  allowPermanentRetention: false
+  allowSuggestionFromHistorySummary: false
+  providerInjectionEnabledByDefault: boolean
+}
+
+interface CustomerProfileRecord {
+  profileId: string
+  contactKeyHash: string
+  displayName?: string
+  sourceAppType: AppType
+  version: number
+  disabled: boolean
+  updatedAt: string
+  expiresAt?: string
+  fields: Record<string, string | string[] | undefined>
+  provenance: Array<{ fieldPath: string; source: string; confirmedByUser: boolean; createdAt: string; auditId?: string }>
+}
+
+interface CustomerMemoryState {
+  settings: CustomerMemorySettings
+  profilesById: Record<string, CustomerProfileRecord>
+  tombstonesByContactKeyHash: Record<string, { profileId: string; contactKeyHash: string; reason: string; deletedAt: string }>
 }
 
 interface AuditRecord {
@@ -678,6 +705,12 @@ function SettingsWindow(): React.JSX.Element {
         >
           渠道适配
         </button>
+        <button
+          className={`settings-nav-item ${section === 'memory' ? 'active' : ''}`}
+          onClick={() => setSection('memory')}
+        >
+          客户记忆
+        </button>
       </aside>
 
       <main className="settings-main">
@@ -691,8 +724,10 @@ function SettingsWindow(): React.JSX.Element {
           <KnowledgeSettingsPage />
         ) : section === 'intent' ? (
           <IntentRoutingSettingsPage />
-        ) : (
+        ) : section === 'channel' ? (
           <ChannelAdapterSettingsPage />
+        ) : (
+          <CustomerMemoryPage />
         )}
       </main>
     </div>
@@ -1049,12 +1084,11 @@ function KnowledgeSettingsPage(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    void loadKnowledge()
+    const id = window.setTimeout(() => {
+      void loadKnowledge()
+    }, 0)
+    return () => window.clearTimeout(id)
   }, [loadKnowledge])
-
-  useEffect(() => {
-    if (selected) setDraft(selected)
-  }, [selected])
 
   useEffect(() => {
     void (async () => {
@@ -1135,7 +1169,7 @@ function KnowledgeSettingsPage(): React.JSX.Element {
           </div>
           {visibleEntries.length ? (
             visibleEntries.map((entry) => (
-              <button key={entry.id} className={`knowledge-row ${entry.id === selectedId ? 'active' : ''} ${entry.enabled ? '' : 'muted'}`} onClick={() => setSelectedId(entry.id)}>
+              <button key={entry.id} className={`knowledge-row ${entry.id === selectedId ? 'active' : ''} ${entry.enabled ? '' : 'muted'}`} onClick={() => { setSelectedId(entry.id); setDraft(entry) }}>
                 <strong>{entry.title}</strong>
                 <StatusChip label={entry.sourceType.toUpperCase()} tone="info" />
                 <span>{entry.keywords.slice(0, 3).join('、') || '无关键词'}</span>
@@ -1277,7 +1311,10 @@ function IntentRoutingSettingsPage(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
-    void loadIntentSettings()
+    const id = window.setTimeout(() => {
+      void loadIntentSettings()
+    }, 0)
+    return () => window.clearTimeout(id)
   }, [loadIntentSettings])
 
   useEffect(() => {
@@ -1605,6 +1642,308 @@ function ChannelAdapterSettingsPage(): React.JSX.Element {
           </tbody>
         </table>
       </section>
+    </div>
+  )
+}
+
+function CustomerMemoryPage(): React.JSX.Element {
+  const [state, setState] = useState<CustomerMemoryState>(() => ({
+    settings: {
+      enabled: false,
+      defaultRetentionDays: 180,
+      allowPermanentRetention: false,
+      allowSuggestionFromHistorySummary: false,
+      providerInjectionEnabledByDefault: true
+    },
+    profilesById: {
+      sample: {
+        profileId: 'cm-sample',
+        contactKeyHash: 'a7c9e1f03b21',
+        displayName: '王先生',
+        sourceAppType: 'wechat',
+        version: 3,
+        disabled: false,
+        updatedAt: '2026-05-17T08:00:00.000Z',
+        expiresAt: '2026-11-13T08:00:00.000Z',
+        fields: {
+          preferenceNotes: ['偏好简短直接的回复'],
+          businessContext: ['关注企业版自动化集成'],
+          productInterests: ['API 集成', '自动化工作流'],
+          doNotMention: ['不要提及竞品对比'],
+          tonePreference: 'formal',
+          lastConfirmedSummary: '已确认客户关注企业版安全能力。'
+        },
+        provenance: [
+          { fieldPath: 'preferenceNotes', source: 'user_entered', confirmedByUser: true, createdAt: '2026-05-17T08:00:00.000Z' },
+          { fieldPath: 'businessContext', source: 'user_confirmed_suggestion', confirmedByUser: true, createdAt: '2026-05-17T08:00:00.000Z', auditId: 'AUD-20260517' }
+        ]
+      }
+    },
+    tombstonesByContactKeyHash: {}
+  }))
+  const [nowMs] = useState(() => Date.now())
+  const [draftMemoryDisabled, setDraftMemoryDisabled] = useState(false)
+  const [suggestionOpen, setSuggestionOpen] = useState(false)
+  const [auditOpen, setAuditOpen] = useState(false)
+  const [selectedFields, setSelectedFields] = useState<Record<string, boolean>>({
+    preferenceNotes: true,
+    businessContext: true,
+    productInterests: true,
+    doNotMention: false
+  })
+  const [error, setError] = useState('')
+
+  const profiles = Object.values(state.profilesById)
+  const profile = profiles[0] || null
+  const expired = Boolean(profile?.expiresAt && Date.parse(profile.expiresAt) <= nowMs)
+  const deleted = Boolean(profile && state.tombstonesByContactKeyHash[profile.contactKeyHash])
+  const injectedFieldPaths =
+    profile && !draftMemoryDisabled && state.settings.enabled && !profile.disabled && !expired && !deleted
+      ? Object.entries(profile.fields)
+          .filter(([, value]) => value !== undefined && !(Array.isArray(value) && value.length === 0))
+          .map(([key]) => key)
+      : []
+  const omittedReason = !state.settings.enabled
+    ? 'disabled'
+    : draftMemoryDisabled || profile?.disabled
+      ? 'disabled'
+      : deleted
+        ? 'deleted'
+        : expired
+          ? 'expired'
+          : suggestionOpen
+            ? 'not_confirmed'
+            : ''
+
+  const refreshMemory = useCallback(async () => {
+    const next = (await window.electron?.invoke('customerMemory:getState')) as CustomerMemoryState | undefined
+    if (next) setState(next)
+  }, [])
+
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      void refreshMemory()
+    }, 0)
+    return () => window.clearTimeout(id)
+  }, [refreshMemory])
+
+  const updateSettings = useCallback(
+    async (patch: Partial<CustomerMemorySettings>) => {
+      if (patch.enabled === true && !state.settings.enabled) {
+        const confirmed = window.confirm('开启后仅保存字段级确认内容，不保存完整聊天记录。确认开启？')
+        if (!confirmed) return
+      }
+      const result = await window.electron?.invoke('customerMemory:updateSettings', {
+        ...state.settings,
+        ...patch
+      })
+      if (result?.state) setState(result.state)
+    },
+    [state.settings]
+  )
+
+  const createSampleProfile = useCallback(async () => {
+    const checkedFields: Record<string, string[]> = {}
+    if (selectedFields.preferenceNotes) checkedFields.preferenceNotes = ['偏好简短直接的回复']
+    if (selectedFields.businessContext) checkedFields.businessContext = ['关注企业版自动化集成']
+    if (selectedFields.productInterests) checkedFields.productInterests = ['API 集成']
+    if (selectedFields.doNotMention) checkedFields.doNotMention = ['不要保存手机号、地址或订单号']
+    const result = await window.electron?.invoke('customerMemory:createOrUpdateProfile', {
+      contactKey: '王先生',
+      sourceAppType: 'wechat',
+      displayName: '王先生',
+      retentionDays: state.settings.defaultRetentionDays,
+      fields: checkedFields
+    })
+    if (!result?.success) {
+      setError('保存失败：请确认全局长期记忆已开启，且字段不含敏感内容')
+      return
+    }
+    setError('')
+    setSuggestionOpen(false)
+    if (result.state) setState(result.state)
+  }, [selectedFields, state.settings.defaultRetentionDays])
+
+  const deleteProfile = useCallback(async () => {
+    if (!profile) return
+    const confirmed = window.confirm('删除后将不再用于后续草稿，历史审计只保留脱敏记录')
+    if (!confirmed) return
+    const result = await window.electron?.invoke('customerMemory:deleteProfile', profile.profileId)
+    if (result?.state) setState(result.state)
+  }, [profile])
+
+  const clearAll = useCallback(async () => {
+    const confirmed = window.confirm('清空全部客户记忆？完整内容会被移除，仅保留 tombstone 阻断注入。')
+    if (!confirmed) return
+    const result = await window.electron?.invoke('customerMemory:clearAllProfiles')
+    if (result?.state) setState(result.state)
+  }, [])
+
+  return (
+    <div className="draft-dashboard customer-memory-page">
+      <header className="draft-header">
+        <div>
+          <h1>客户长期记忆</h1>
+          <p>本机保存、字段级确认、可删除、可过期；不会改变审核或发送权限。</p>
+        </div>
+        <div className="draft-header-actions">
+          <StatusChip label={`全局长期记忆：${state.settings.enabled ? '开启' : '关闭'}`} tone={state.settings.enabled ? 'success' : 'warning'} />
+          <StatusChip label={`保存期限 ${state.settings.defaultRetentionDays} 天`} tone="info" />
+        </div>
+      </header>
+      {error ? <ErrorBanner message={error} /> : null}
+      <div className="memory-grid">
+        <section className="draft-panel memory-profile-panel">
+          <div className="panel-title-row">
+            <h2>客户 Profile</h2>
+            <StatusChip label={deleted ? '已删除' : expired ? '已过期' : profile?.disabled ? '已禁用' : profile ? '生效中' : '无 Profile'} tone={deleted || expired ? 'warning' : profile ? 'success' : 'info'} />
+          </div>
+          {profile && !deleted ? (
+            <>
+              <div className="memory-identity">
+                <div className="memory-avatar">王</div>
+                <div>
+                  <strong>{profile.displayName || '未命名客户'}</strong>
+                  <p>{profile.contactKeyHash.slice(0, 12)} · v{profile.version} · {APP_TYPE_LABELS[profile.sourceAppType]}</p>
+                </div>
+              </div>
+              <label className="knowledge-enabled"><input type="checkbox" checked={!profile.disabled} readOnly /> 本客户注入 ProviderInput</label>
+              <CustomerMemoryFieldGroup title="偏好" values={profile.fields.preferenceNotes} />
+              <CustomerMemoryFieldGroup title="业务上下文" values={profile.fields.businessContext} />
+              <CustomerMemoryFieldGroup title="产品兴趣" values={profile.fields.productInterests} />
+              <CustomerMemoryFieldGroup title="禁提事项" values={profile.fields.doNotMention} warning />
+              <div className="memory-provenance">
+                <h3>来源追溯</h3>
+                {profile.provenance.map((item) => (
+                  <div key={`${item.fieldPath}-${item.createdAt}`} className="audit-mini-item">
+                    <StatusChip label={item.confirmedByUser ? '已确认' : '未确认'} tone={item.confirmedByUser ? 'success' : 'warning'} />
+                    <span>{item.fieldPath} · {item.source}</span>
+                  </div>
+                ))}
+              </div>
+              <button className="review-btn danger" onClick={deleteProfile}>删除客户记忆</button>
+            </>
+          ) : (
+            <div className="empty-state">
+              <span>▱</span>
+              {deleted ? '客户记忆已删除，后续不会注入' : '暂无客户 Profile'}
+              <button className="review-btn primary" onClick={() => setSuggestionOpen(true)}>保存为客户记忆</button>
+            </div>
+          )}
+        </section>
+
+        <section className="draft-panel memory-draft-panel">
+          <h2>草稿审核</h2>
+          <div className={injectedFieldPaths.length ? 'memory-banner success' : 'memory-banner warning'}>
+            <strong>{injectedFieldPaths.length ? '本次草稿使用了客户记忆' : '本次草稿未注入客户记忆'}</strong>
+            <p>{injectedFieldPaths.length ? injectedFieldPaths.join('、') : `omittedReason: ${omittedReason || 'not_found'}`}</p>
+          </div>
+          <div className="draft-editor memory-draft-preview">
+            王先生，您好！根据已确认的企业版集成需求，我们建议先从 API 接入和自动化工作流配置开始评估。
+          </div>
+          <label className="knowledge-enabled"><input type="checkbox" checked={draftMemoryDisabled} onChange={(event) => setDraftMemoryDisabled(event.target.checked)} /> 禁用本轮记忆</label>
+          <div className="preview-result">
+            <StatusChip label="M1 policy 未改变" tone="success" />
+            <p>客户记忆只影响 Provider 草稿上下文，不改变 blocked / requires_review / allow 结论。</p>
+          </div>
+          <button className="review-btn secondary" onClick={() => setSuggestionOpen(true)}>保存为客户记忆</button>
+        </section>
+
+        <section className="draft-panel memory-privacy-panel">
+          <h2>隐私与数据</h2>
+          <label className="knowledge-enabled"><input type="checkbox" checked={state.settings.enabled} onChange={(event) => updateSettings({ enabled: event.target.checked })} /> 全局长期记忆</label>
+          <h3>保存期限</h3>
+          <div className="retention-control">
+            {[30, 90, 180].map((days) => (
+              <button key={days} className={state.settings.defaultRetentionDays === days ? 'active' : ''} onClick={() => updateSettings({ defaultRetentionDays: days as 30 | 90 | 180 })}>{days} 天</button>
+            ))}
+          </div>
+          <div className="memory-banner">
+            永久保留不可用；不从历史聊天、截图、OCR 全文或审计导出生成建议。
+          </div>
+          <button className="review-btn secondary" onClick={() => window.electron?.invoke('customerMemory:cleanupExpired').then((result) => result?.state && setState(result.state))}>清理过期记忆</button>
+          <button className="review-btn danger" onClick={clearAll}>清空全部客户记忆</button>
+          <div className="redacted-audit-card">
+            <h3>审计详情（脱敏）</h3>
+            <p>profileId: {profile?.profileId || '-'}</p>
+            <p>contactKeyHash: {profile?.contactKeyHash.slice(0, 12) || '-'}</p>
+            <p>字段路径: {injectedFieldPaths.join('、') || '-'}</p>
+            <button className="review-btn secondary" onClick={() => setAuditOpen(!auditOpen)}>查看字段级审计</button>
+          </div>
+          {auditOpen ? <RedactedAuditDetail profile={profile} omittedReason={omittedReason || 'not_found'} /> : null}
+        </section>
+      </div>
+      {suggestionOpen ? (
+        <SaveMemorySuggestionDialog
+          selectedFields={selectedFields}
+          onToggle={(field) => setSelectedFields((current) => ({ ...current, [field]: !current[field] }))}
+          onCancel={() => setSuggestionOpen(false)}
+          onSave={createSampleProfile}
+        />
+      ) : null}
+    </div>
+  )
+}
+
+function CustomerMemoryFieldGroup({ title, values, warning }: { title: string; values: unknown; warning?: boolean }): React.JSX.Element {
+  const rows = Array.isArray(values) ? values : values ? [String(values)] : []
+  return (
+    <div className={`memory-field-group ${warning ? 'warning' : ''}`}>
+      <strong>{title}</strong>
+      {rows.length ? rows.map((item) => <span key={item}>{item}</span>) : <span>未设置</span>}
+    </div>
+  )
+}
+
+function RedactedAuditDetail({ profile, omittedReason }: { profile: CustomerProfileRecord | null; omittedReason: string }): React.JSX.Element {
+  return (
+    <div className="redacted-audit-card">
+      <p>version: {profile?.version || '-'}</p>
+      <p>omittedReason: {omittedReason}</p>
+      <p>sourceSummary: {profile?.provenance.map((item) => `${item.fieldPath}/${item.source}`).join('、') || '-'}</p>
+    </div>
+  )
+}
+
+function SaveMemorySuggestionDialog({
+  selectedFields,
+  onToggle,
+  onCancel,
+  onSave
+}: {
+  selectedFields: Record<string, boolean>
+  onToggle: (field: string) => void
+  onCancel: () => void
+  onSave: () => void
+}): React.JSX.Element {
+  const fields = [
+    ['preferenceNotes', '偏好：偏好简短直接的回复'],
+    ['businessContext', '业务上下文：关注企业版自动化集成'],
+    ['productInterests', '产品兴趣：API 集成'],
+    ['doNotMention', '不保存手机号、地址、订单号或密钥']
+  ]
+  return (
+    <div className="memory-modal-backdrop">
+      <div className="memory-modal">
+        <div className="panel-title-row">
+          <h2>保存为客户记忆</h2>
+          <button className="icon-action" onClick={onCancel}>×</button>
+        </div>
+        <p>仅保存逐字段确认的内容；不保存完整聊天记录、截图、OCR 全文、手机号、地址、订单号、二维码、API key、token 或凭证。</p>
+        <div className="memory-confirm-list">
+          {fields.map(([field, label]) => (
+            <label key={field} className="knowledge-enabled">
+              <input type="checkbox" checked={selectedFields[field]} onChange={() => onToggle(field)} />
+              {label}
+            </label>
+          ))}
+        </div>
+        <div className="error-banner">未确认字段不会写入 profile、不会注入 ProviderInput、不会导出原文。</div>
+        <div className="review-actions">
+          <button className="review-btn neutral" onClick={onCancel}>取消</button>
+          <button className="review-btn primary" onClick={onSave}>确认保存</button>
+        </div>
+      </div>
     </div>
   )
 }

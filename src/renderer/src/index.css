@@ -1501,3 +1501,140 @@ textarea.form-input {
     grid-column: 1 / -1;
   }
 }
+
+/* ─── Customer Memory ─── */
+.memory-grid {
+  display: grid;
+  grid-template-columns: 360px minmax(420px, 1fr) 330px;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.memory-identity {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.memory-avatar {
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #dbeafe;
+  color: #2563eb;
+  font-weight: 800;
+}
+
+.memory-identity p,
+.memory-banner p,
+.redacted-audit-card p {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.memory-field-group,
+.memory-banner,
+.redacted-audit-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.memory-field-group span {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.memory-field-group.warning {
+  border-color: #fbbf24;
+  background: #fffbeb;
+}
+
+.memory-banner {
+  background: #f3f4f6;
+}
+
+.memory-banner.success {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.memory-banner.warning {
+  border-color: #fbbf24;
+  background: #fffbeb;
+}
+
+.memory-draft-preview {
+  min-height: 150px;
+  padding: 12px;
+  background: #ffffff;
+  border-color: #e5e7eb;
+}
+
+.retention-control {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 10px 0 14px;
+}
+
+.retention-control button {
+  height: 34px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #374151;
+  font-size: 13px;
+}
+
+.retention-control button.active {
+  border-color: #2563eb;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+.memory-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgba(17, 24, 39, 0.34);
+}
+
+.memory-modal {
+  width: min(520px, calc(100vw - 48px));
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+}
+
+.memory-modal p {
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.memory-confirm-list {
+  display: grid;
+  gap: 8px;
+}
+
+@media (max-width: 1180px) {
+  .memory-grid {
+    grid-template-columns: minmax(340px, 1fr);
+  }
+}
