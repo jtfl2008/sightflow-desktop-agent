@@ -7,9 +7,8 @@ import {
 
 const ID_PATTERN = /^[A-Za-z0-9._:-]{6,128}$/
 const CONTACT_HASH_PATTERNS = [
-  /^ch_[a-f0-9]{4,64}$/i,
-  /^[a-f0-9]{8,128}$/i,
-  /^[A-Za-z0-9_-]{8,128}$/
+  /^ch_[a-f0-9]{8,64}$/i,
+  /^[a-f0-9]{16,128}$/i
 ]
 
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
@@ -18,6 +17,7 @@ const URL_PATTERN = /https?:\/\//i
 const SECRET_PATTERN = /(Bearer\s+[A-Za-z0-9._-]+|token\s*=|api[-_]?key\s*=|secret\s*=|sk-[A-Za-z0-9_-]+)/i
 const CJK_NAME_PATTERN = /^[\u3040-\u30ff\u3400-\u9fff]{2,8}$/
 const NATURAL_LANGUAGE_PATTERN = /^[A-Za-z]+(?:\s+[A-Za-z]+){1,4}$/
+const PLAINTEXT_CONTACT_ID_PATTERN = /^(?=.{6,64}$)(?=.*[A-Za-z])[A-Za-z][A-Za-z0-9_-]*$/
 
 export type DiagnosticsQueryValidationResult =
   | { ok: true; query: NormalizedDiagnosticsQuery }
@@ -84,7 +84,8 @@ export function looksLikePlaintextContact(value: string): boolean {
     value.includes('@') ||
     value.includes('+81') ||
     CJK_NAME_PATTERN.test(value) ||
-    NATURAL_LANGUAGE_PATTERN.test(value)
+    NATURAL_LANGUAGE_PATTERN.test(value) ||
+    PLAINTEXT_CONTACT_ID_PATTERN.test(value)
   )
 }
 

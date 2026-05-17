@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { isDiagnosticsContactHash } from './diagnostics-contact-hash'
 import { checkDiagnosticsRedaction } from './diagnostics-redaction-checker'
 import {
   DiagnosticsExportResponse,
@@ -16,6 +17,15 @@ export function exportDiagnosticsRecord(
 ): DiagnosticsExportResponse {
   if (record.redaction.status === 'blocked' || record.redaction.unknownFieldCount > 0) {
     return blocked(record)
+  }
+  const unsafeHashPaths = collectUnsafeHashPaths(record)
+  if (unsafeHashPaths.length) {
+    return {
+      ok: false,
+      errorCode: 'export_contains_sensitive_field',
+      blockedTypes: ['plaintext_contact'],
+      omittedFieldPaths: unsafeHashPaths
+    }
   }
   const exportData = safeExportData(record)
   const redaction = checkDiagnosticsRedaction(exportData, { now })
@@ -147,6 +157,34 @@ function safeFileName(value: string): string {
 
 function shortHash(value: string): string {
   return value.length > 12 ? `${value.slice(0, 8)}...` : value
+}
+
+function collectUnsafeHashPaths(value: unknown): string[] {
+  const paths: string[] = []
+  function visit(current: unknown, path: string): void {
+    if (current === null || current === undefined) return
+    if (Array.isArray(current)) {
+      current.forEach((item, index) => visit(item, `${path}[${index}]`))
+      return
+    }
+    if (!isRecord(current)) return
+    for (const [key, child] of Object.entries(current)) {
+      const childPath = path ? `${path}.${key}` : key
+      if (isHashFieldKey(key)) {
+        if (typeof child === 'string' && !isDiagnosticsContactHash(child)) {
+          paths.push(childPath)
+        }
+        continue
+      }
+      visit(child, childPath)
+    }
+  }
+  visit(value, '')
+  return Array.from(new Set(paths)).sort()
+}
+
+function isHashFieldKey(key: string): boolean {
+  return key === 'contactHash' || key === 'contactKeyHash' || key === 'sampleIdHash'
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

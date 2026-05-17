@@ -68,6 +68,29 @@ const redactionBlockedAdapter: DiagnosticsSourceAdapter = {
   }
 }
 
+const plaintextHashAdapter: DiagnosticsSourceAdapter = {
+  source: 'runtime',
+  async query() {
+    return [
+      {
+        source: 'runtime',
+        sourceRecordId: 'runtime-plaintext-contact-hash',
+        createdAt: '2026-05-17T00:03:00.000Z',
+        raw: {
+          id: 'runtime-plaintext-contact-hash',
+          runId: 'run-plaintext-contact-hash',
+          action: 'draft.created',
+          contactHash: 'AliceBob',
+          metadata: {
+            source: 'runtime',
+            contactKeyHash: 'ch_abcdef123456'
+          }
+        }
+      }
+    ]
+  }
+}
+
 async function main(): Promise<void> {
   const runtimeOnly = await queryDiagnostics([runtimeAdapter, debugAdapter], {
     source: 'runtime',
@@ -113,6 +136,20 @@ async function main(): Promise<void> {
       assert.equal(node.summary, 'redaction_blocked')
       assert.equal(node.detail.type, node.capability)
     }
+  }
+
+  const plaintextHash = await queryDiagnostics([plaintextHashAdapter], {
+    source: 'runtime',
+    runId: 'run-plaintext-contact-hash'
+  })
+  assert.equal(plaintextHash.ok, true)
+  if (plaintextHash.ok) {
+    const record = plaintextHash.records[0]
+    assert.equal(record.redaction.status, 'blocked')
+    assert.equal(record.redaction.blockedTypes.includes('plaintext_contact'), true)
+    assert.equal(record.redaction.omittedFieldPaths.includes('contactHash'), true)
+    assert.equal(record.contactHash, undefined)
+    assert.equal(JSON.stringify(record).includes('AliceBob'), false)
   }
 
   console.log('diagnostics-aggregator mock tests passed')

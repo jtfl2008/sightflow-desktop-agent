@@ -74,15 +74,14 @@ export function toDiagnosticsRecordView(
 ): DiagnosticsRecordView {
   const runId = stringAt(record.raw, ['runId', 'metadata.runId', 'reportId'])
   const draftId = stringAt(record.raw, ['draftId', 'metadata.draftId'])
-  const contactHashCandidate = stringAt(record.raw, [
-    'contactHash',
-    'contactKeyHash',
-    'metadata.contactHash',
-    'metadata.contactKeyHash',
-    'metadata.customerProfile.contactKeyHash',
-    'metadata.channelContext.contactKeyHash'
-  ])
-  const contactHash = contactHashCandidate && isDiagnosticsContactHash(contactHashCandidate)
+  const hashCandidates = collectHashShapeCandidates(record.raw)
+  const hasInvalidHashCandidate = hashCandidates.some(
+    (candidate) => candidate.value && !isDiagnosticsContactHash(candidate.value)
+  )
+  const contactHashCandidate = hashCandidates.find(
+    (candidate) => candidate.value && isDiagnosticsContactHash(candidate.value)
+  )?.value
+  const contactHash = contactHashCandidate && !hasInvalidHashCandidate
     ? contactHashCandidate.trim()
     : undefined
   const primaryIntentId = stringAt(record.raw, ['primaryIntentId', 'metadata.primaryIntentId'])
@@ -91,7 +90,7 @@ export function toDiagnosticsRecordView(
   const topErrorCode = inferTopErrorCode(record.raw)
   const redaction = withContactHashRedaction(
     checkDiagnosticsRedaction(record.raw, { now }),
-    collectHashShapeCandidates(record.raw, contactHashCandidate)
+    hashCandidates
   )
   const isRedactionBlocked = redaction.status === 'blocked' || redaction.unknownFieldCount > 0
   const timeline = isRedactionBlocked
@@ -140,12 +139,12 @@ function withContactHashRedaction(
 }
 
 function collectHashShapeCandidates(
-  raw: Record<string, unknown>,
-  contactHashCandidate?: string
+  raw: Record<string, unknown>
 ): Array<{ path: string; value?: string }> {
   return [
-    { path: 'contactHash', value: contactHashCandidate },
+    { path: 'contactHash', value: stringAt(raw, ['contactHash']) },
     { path: 'contactKeyHash', value: stringAt(raw, ['contactKeyHash']) },
+    { path: 'metadata.contactHash', value: stringAt(raw, ['metadata.contactHash']) },
     { path: 'metadata.contactKeyHash', value: stringAt(raw, ['metadata.contactKeyHash']) },
     {
       path: 'metadata.customerProfile.contactKeyHash',

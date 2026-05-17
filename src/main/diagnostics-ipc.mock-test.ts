@@ -37,6 +37,13 @@ async function main(): Promise<void> {
   assert.equal((plaintext as any).ok, false)
   assert.equal((plaintext as any).errorCode, 'plaintext_contact_rejected')
 
+  const plaintextIdentifier = await handlers.get('diagnostics:query')?.(null, {
+    source: 'runtime',
+    contactHash: 'AliceBob'
+  })
+  assert.equal((plaintextIdentifier as any).ok, false)
+  assert.equal((plaintextIdentifier as any).errorCode, 'plaintext_contact_rejected')
+
   console.log('diagnostics-ipc mock tests passed')
 }
 

@@ -56,4 +56,45 @@ const markdown = exportDiagnosticsRecord(baseRecord, 'markdown')
 assert.equal(markdown.ok, true)
 if (markdown.ok) assert.equal(markdown.content.includes('/workspace/'), false)
 
+const cachedPlaintextContactHash = exportDiagnosticsRecord(
+  {
+    ...baseRecord,
+    contactHash: 'AliceBob'
+  },
+  'json'
+)
+assert.equal(cachedPlaintextContactHash.ok, false)
+if (!cachedPlaintextContactHash.ok) {
+  assert.equal(cachedPlaintextContactHash.errorCode, 'export_contains_sensitive_field')
+  assert.deepEqual(cachedPlaintextContactHash.blockedTypes, ['plaintext_contact'])
+  assert.deepEqual(cachedPlaintextContactHash.omittedFieldPaths, ['contactHash'])
+}
+
+const cachedPlaintextDetailHash = exportDiagnosticsRecord(
+  {
+    ...baseRecord,
+    timeline: [
+      {
+        capability: 'customer_memory',
+        source: 'runtime',
+        status: 'ok',
+        summary: 'contactHash=AliceBob',
+        detail: {
+          type: 'customer_memory',
+          contactKeyHash: 'AliceBob'
+        }
+      }
+    ]
+  },
+  'markdown'
+)
+assert.equal(cachedPlaintextDetailHash.ok, false)
+if (!cachedPlaintextDetailHash.ok) {
+  assert.equal(cachedPlaintextDetailHash.errorCode, 'export_contains_sensitive_field')
+  assert.deepEqual(cachedPlaintextDetailHash.blockedTypes, ['plaintext_contact'])
+  assert.deepEqual(cachedPlaintextDetailHash.omittedFieldPaths, [
+    'timeline[0].detail.contactKeyHash'
+  ])
+}
+
 console.log('diagnostics-export mock tests passed')
