@@ -70,6 +70,10 @@ export function validateDiagnosticsQuery(input: DiagnosticsQuery): DiagnosticsQu
   }
 }
 
+export function isDiagnosticsContactHash(value: string): boolean {
+  return CONTACT_HASH_PATTERNS.some((pattern) => pattern.test(value.trim()))
+}
+
 export function looksLikePlaintextContact(value: string): boolean {
   if (!value) return false
   return (
