@@ -36,6 +36,118 @@
       "expectedAfter": { "decision": "recovery_fallback_builtin", "productionVisible": false, "activeProviderId": "builtin-doubao", "reasonCodes": ["provider.recovery.active_pointer_missing_source_provenance", "provider.recovery.fallback_builtin"] }
     },
     {
+      "id": "lifecycle-active-http-source",
+      "title": "lifecycle active with http source provenance falls back",
+      "settingsBefore": { "chatProvider": { "installed": null, "manifestUrlOrigin": null, "manifestUrlHasRedactedQuery": false } },
+      "providerLifecycleBefore": {
+        "activePointersByProviderId": {
+          "trusted-provider": { "providerId": "trusted-provider", "activeVersion": "1.0.0", "rollbackEligible": false, "updatedAt": "2026-05-17T00:00:00.000Z" }
+        },
+        "versionsByProviderId": {
+          "trusted-provider": {
+            "1.0.0": { "providerId": "trusted-provider", "version": "1.0.0", "manifestPath": "providers/trusted-provider/1.0.0/manifest.json", "sourceUrl": "http://fixtures.local/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "trusted_signed", "lifecycleState": "active" }
+          }
+        }
+      },
+      "expectedAfter": { "decision": "recovery_fallback_builtin", "productionVisible": false, "activeProviderId": "builtin-doubao", "reasonCodes": ["provider.recovery.active_pointer_untrusted_source", "provider.recovery.fallback_builtin"] }
+    },
+    {
+      "id": "lifecycle-active-unsupported-source",
+      "title": "lifecycle active with unsupported source protocol falls back",
+      "settingsBefore": { "chatProvider": { "installed": null, "manifestUrlOrigin": null, "manifestUrlHasRedactedQuery": false } },
+      "providerLifecycleBefore": {
+        "activePointersByProviderId": {
+          "trusted-provider": { "providerId": "trusted-provider", "activeVersion": "1.0.0", "rollbackEligible": false, "updatedAt": "2026-05-17T00:00:00.000Z" }
+        },
+        "versionsByProviderId": {
+          "trusted-provider": {
+            "1.0.0": { "providerId": "trusted-provider", "version": "1.0.0", "manifestPath": "providers/trusted-provider/1.0.0/manifest.json", "sourceUrl": "ftp://fixtures.local/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "trusted_signed", "lifecycleState": "active" }
+          }
+        }
+      },
+      "expectedAfter": { "decision": "recovery_fallback_builtin", "productionVisible": false, "activeProviderId": "builtin-doubao", "reasonCodes": ["provider.recovery.active_pointer_untrusted_source", "provider.recovery.fallback_builtin"] }
+    },
+    {
+      "id": "lifecycle-active-debug-only",
+      "title": "lifecycle active debug only provider falls back",
+      "settingsBefore": { "chatProvider": { "installed": null, "manifestUrlOrigin": null, "manifestUrlHasRedactedQuery": false } },
+      "providerLifecycleBefore": {
+        "activePointersByProviderId": {
+          "debug-provider": { "providerId": "debug-provider", "activeVersion": "1.0.0", "rollbackEligible": false, "updatedAt": "2026-05-17T00:00:00.000Z" }
+        },
+        "versionsByProviderId": {
+          "debug-provider": {
+            "1.0.0": { "providerId": "debug-provider", "version": "1.0.0", "manifestPath": "providers/debug-provider/1.0.0/manifest.json", "sourceUrl": "file://fixture/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "debug_only", "lifecycleState": "active" }
+          }
+        }
+      },
+      "expectedAfter": { "decision": "recovery_fallback_builtin", "productionVisible": false, "activeProviderId": "builtin-doubao", "reasonCodes": ["provider.recovery.active_pointer_gate_denied", "provider.security.unknown_publisher", "provider.recovery.previous_pointer_missing", "provider.recovery.fallback_builtin"] }
+    },
+    {
+      "id": "lifecycle-active-tampered",
+      "title": "lifecycle active tampered provider falls back",
+      "settingsBefore": { "chatProvider": { "installed": null, "manifestUrlOrigin": null, "manifestUrlHasRedactedQuery": false } },
+      "providerLifecycleBefore": {
+        "activePointersByProviderId": {
+          "tampered-provider": { "providerId": "tampered-provider", "activeVersion": "1.0.0", "rollbackEligible": false, "updatedAt": "2026-05-17T00:00:00.000Z" }
+        },
+        "versionsByProviderId": {
+          "tampered-provider": {
+            "1.0.0": { "providerId": "tampered-provider", "version": "1.0.0", "manifestPath": "providers/tampered-provider/1.0.0/manifest.json", "sourceUrl": "https://fixtures.local/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "blocked", "lifecycleState": "active" }
+          }
+        }
+      },
+      "expectedAfter": { "decision": "recovery_fallback_builtin", "productionVisible": false, "activeProviderId": "builtin-doubao", "reasonCodes": ["provider.recovery.active_pointer_gate_denied", "provider.security.signature_invalid", "provider.recovery.previous_pointer_missing", "provider.recovery.fallback_builtin"] }
+    },
+    {
+      "id": "lifecycle-active-sha256-mismatch",
+      "title": "lifecycle active artifact hash mismatch falls back",
+      "settingsBefore": { "chatProvider": { "installed": null, "manifestUrlOrigin": null, "manifestUrlHasRedactedQuery": false } },
+      "providerLifecycleBefore": {
+        "activePointersByProviderId": {
+          "hash-mismatch-provider": { "providerId": "hash-mismatch-provider", "activeVersion": "1.0.0", "rollbackEligible": false, "updatedAt": "2026-05-17T00:00:00.000Z" }
+        },
+        "versionsByProviderId": {
+          "hash-mismatch-provider": {
+            "1.0.0": { "providerId": "hash-mismatch-provider", "version": "1.0.0", "manifestPath": "providers/hash-mismatch-provider/1.0.0/manifest.json", "sourceUrl": "https://fixtures.local/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "blocked", "lifecycleState": "active" }
+          }
+        }
+      },
+      "expectedAfter": { "decision": "recovery_fallback_builtin", "productionVisible": false, "activeProviderId": "builtin-doubao", "reasonCodes": ["provider.recovery.active_pointer_gate_denied", "provider.security.artifact_hash_mismatch", "provider.recovery.previous_pointer_missing", "provider.recovery.fallback_builtin"] }
+    },
+    {
+      "id": "lifecycle-active-unknown-publisher",
+      "title": "lifecycle active unknown publisher provider falls back",
+      "settingsBefore": { "chatProvider": { "installed": null, "manifestUrlOrigin": null, "manifestUrlHasRedactedQuery": false } },
+      "providerLifecycleBefore": {
+        "activePointersByProviderId": {
+          "unknown-provider": { "providerId": "unknown-provider", "activeVersion": "1.0.0", "rollbackEligible": false, "updatedAt": "2026-05-17T00:00:00.000Z" }
+        },
+        "versionsByProviderId": {
+          "unknown-provider": {
+            "1.0.0": { "providerId": "unknown-provider", "version": "1.0.0", "manifestPath": "providers/unknown-provider/1.0.0/manifest.json", "sourceUrl": "https://fixtures.local/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "debug_only", "lifecycleState": "active" }
+          }
+        }
+      },
+      "expectedAfter": { "decision": "recovery_fallback_builtin", "productionVisible": false, "activeProviderId": "builtin-doubao", "reasonCodes": ["provider.recovery.active_pointer_gate_denied", "provider.security.unknown_publisher", "provider.recovery.previous_pointer_missing", "provider.recovery.fallback_builtin"] }
+    },
+    {
+      "id": "lifecycle-active-revoked-publisher",
+      "title": "lifecycle active revoked publisher provider falls back",
+      "settingsBefore": { "chatProvider": { "installed": null, "manifestUrlOrigin": null, "manifestUrlHasRedactedQuery": false } },
+      "providerLifecycleBefore": {
+        "activePointersByProviderId": {
+          "revoked-provider": { "providerId": "revoked-provider", "activeVersion": "1.0.0", "rollbackEligible": false, "updatedAt": "2026-05-17T00:00:00.000Z" }
+        },
+        "versionsByProviderId": {
+          "revoked-provider": {
+            "1.0.0": { "providerId": "revoked-provider", "version": "1.0.0", "manifestPath": "providers/revoked-provider/1.0.0/manifest.json", "sourceUrl": "https://fixtures.local/manifest.json", "artifactHashes": { "provider.bundle.js": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" }, "trustLevel": "blocked", "lifecycleState": "active" }
+          }
+        }
+      },
+      "expectedAfter": { "decision": "recovery_fallback_builtin", "productionVisible": false, "activeProviderId": "builtin-doubao", "reasonCodes": ["provider.recovery.active_pointer_gate_denied", "provider.security.revoked_publisher", "provider.recovery.previous_pointer_missing", "provider.recovery.fallback_builtin"] }
+    },
+    {
       "id": "settings-trusted-lifecycle-missing",
       "title": "settings trusted provider while lifecycle pointer is missing",
       "settingsBefore": { "chatProvider": { "installed": { "id": "trusted-provider", "version": "1.0.0" }, "manifestUrlOrigin": "https://fixtures.local", "manifestUrlHasRedactedQuery": false } },

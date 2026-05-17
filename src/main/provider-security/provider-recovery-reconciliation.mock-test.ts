@@ -118,7 +118,12 @@ function baseManifest(id: string, version: string): SecureProviderBundleManifest
     configSchema: { type: 'object', properties: {} },
     security: {
       manifestVersion: '1.2',
-      publisherId: id === 'revoked-provider' ? 'revoked' : 'official',
+      publisherId:
+        id === 'revoked-provider'
+          ? 'revoked'
+          : id === 'unknown-provider'
+            ? 'unknown'
+            : 'official',
       keyId: 'k1',
       signatureAlgorithm: 'ed25519',
       signature: '',
@@ -162,6 +167,9 @@ function manifestFor(id: string, version: string): ProviderBundleManifest | null
         publisherId: 'unknown'
       }
     })
+  }
+  if (id === 'unknown-provider') {
+    return signed(baseManifest(id, version))
   }
   if (id === 'tampered-provider') {
     const manifest = signed(baseManifest(id, version))
@@ -241,9 +249,18 @@ async function runCase(item: RecoveryFixtureCase): Promise<void> {
     assert.equal(result.reasonCodes.includes(code), true, `${item.id} missing ${code}`)
   }
   assert.equal(auditStore.records.length, 1, item.id)
+  assertAuditRecordRedactionHygiene(auditStore.records[0], item.id)
   if (!item.expectedAfter.productionVisible) {
     assert.equal(settingsStore.store.chatProvider.installed, null, item.id)
   }
+}
+
+const FORBIDDEN_AUDIT_CONTENT =
+  /(sk-[A-Za-z0-9_-]+|Bearer\s+|apiKey|api_key|password|token=|secret=|\/workspace\/|\/home\/|\/Users\/|[A-Z]:\\|provider\.bundle\.js.+export function|bundle secret)/i
+
+function assertAuditRecordRedactionHygiene(record: unknown, id: string): void {
+  const serialized = JSON.stringify(record)
+  assert.equal(FORBIDDEN_AUDIT_CONTENT.test(serialized), false, `${id} leaked sensitive audit content`)
 }
 
 async function main(): Promise<void> {
