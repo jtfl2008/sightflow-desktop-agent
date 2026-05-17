@@ -1,21 +1,20 @@
 import { createRequire } from 'node:module'
 import { AppType } from '../core/rpa/types'
+import {
+  defaultChannelAdapterSettings,
+  normalizeChannelAdapterSettings
+} from '../core/channel-adapter/settings-normalizer'
+import { listChannelAdapterPresets } from '../core/channel-adapter/presets'
+import type {
+  ChannelAdapterPreset,
+  ChannelAdapterSettings,
+  ChannelAdapterSettingsInput
+} from '../core/channel-adapter/types'
 
 const nodeRequire = createRequire(__filename)
 
-export interface ChannelAdapterSettings {
-  appType: AppType
-  manifestId: string
-  version: string
-  enabled: boolean
-  multiSessionEnabled: boolean
-  capabilities: string[]
-  headerConfigured: boolean
-  unreadIndicatorConfigured: boolean
-  runtimeMode: 'single_session' | 'multi_session' | 'degraded_single_session'
-  safetyMode: 'default_single_session' | 'draft_review_only' | 'auto_switch_allowed'
-  updatedAt: string
-}
+export type { ChannelAdapterPreset, ChannelAdapterSettings }
+export { defaultChannelAdapterSettings, normalizeChannelAdapterSettings }
 
 interface ChannelAdapterBackend {
   get(key: 'settings'): Partial<Record<AppType, ChannelAdapterSettings>> | undefined
@@ -31,10 +30,14 @@ export class ChannelAdapterStore {
   }
 
   get(appType: AppType): ChannelAdapterSettings {
-    return this.read()[appType] || defaultChannelAdapterSettings(appType)
+    return normalizeChannelAdapterSettings({
+      ...defaultChannelAdapterSettings(appType),
+      ...(this.read()[appType] || {}),
+      appType
+    })
   }
 
-  save(input: ChannelAdapterSettings): ChannelAdapterSettings {
+  save(input: ChannelAdapterSettingsInput): ChannelAdapterSettings {
     const normalized = normalizeChannelAdapterSettings(input)
     const all = this.read()
     this.backend.set('settings', { ...all, [normalized.appType]: normalized })
@@ -42,55 +45,22 @@ export class ChannelAdapterStore {
   }
 
   list(): ChannelAdapterSettings[] {
-    return Object.values(this.read())
+    return Object.entries(this.read()).map(([appType, settings]) =>
+      normalizeChannelAdapterSettings({
+        ...defaultChannelAdapterSettings(appType as AppType),
+        ...settings,
+        appType: appType as AppType
+      })
+    )
+  }
+
+  listPresets(): ChannelAdapterPreset[] {
+    return listChannelAdapterPresets()
   }
 
   private read(): Partial<Record<AppType, ChannelAdapterSettings>> {
     const settings = this.backend.get('settings')
     return settings && typeof settings === 'object' ? settings : {}
-  }
-}
-
-export function defaultChannelAdapterSettings(appType: AppType): ChannelAdapterSettings {
-  return {
-    appType,
-    manifestId: '',
-    version: '',
-    enabled: false,
-    multiSessionEnabled: false,
-    capabilities: ['single_session'],
-    headerConfigured: false,
-    unreadIndicatorConfigured: false,
-    runtimeMode: 'single_session',
-    safetyMode: 'default_single_session',
-    updatedAt: new Date().toISOString()
-  }
-}
-
-export function normalizeChannelAdapterSettings(
-  input: ChannelAdapterSettings
-): ChannelAdapterSettings {
-  const multiSessionEnabled = input.multiSessionEnabled === true && input.enabled === true
-  const headerConfigured = input.headerConfigured === true
-  const unreadIndicatorConfigured = input.unreadIndicatorConfigured === true
-  const multiSessionReady = multiSessionEnabled && headerConfigured && unreadIndicatorConfigured
-  return {
-    ...defaultChannelAdapterSettings(input.appType),
-    ...input,
-    multiSessionEnabled,
-    headerConfigured,
-    unreadIndicatorConfigured,
-    runtimeMode: multiSessionEnabled
-      ? multiSessionReady
-        ? 'multi_session'
-        : 'degraded_single_session'
-      : 'single_session',
-    safetyMode: multiSessionEnabled
-      ? multiSessionReady
-        ? 'auto_switch_allowed'
-        : 'draft_review_only'
-      : 'default_single_session',
-    updatedAt: new Date().toISOString()
   }
 }
 
