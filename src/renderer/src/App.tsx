@@ -10,7 +10,17 @@ interface LogEntry {
 }
 
 type EngineStatus = 'idle' | 'running' | 'error'
-type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge' | 'intent' | 'channel' | 'memory' | 'debug' | 'providerSecurity'
+type SettingsSection =
+  | 'base'
+  | 'agent'
+  | 'review'
+  | 'knowledge'
+  | 'intent'
+  | 'channel'
+  | 'visionReplay'
+  | 'memory'
+  | 'debug'
+  | 'providerSecurity'
 type AppType = 'wechat' | 'wework' | 'dingtalk' | 'lark' | 'slack' | 'telegram' | 'generic'
 
 type CaptureStrategy = 'auto' | 'vlm' | 'box-select'
@@ -198,6 +208,124 @@ interface KnowledgeEntry {
   enabled: boolean
   updatedAt: string
   lastHitScore?: number
+}
+
+type VisionPrivacyGateStatus = 'passed' | 'warning' | 'blocked'
+type VisionSchemaStatus = 'ok' | 'invalid'
+type VisionHashStatus = 'ok' | 'mismatch' | 'unknown'
+type VisionReportResult = 'passed' | 'failed' | 'warning' | 'blocked'
+type VisionFailureCategory = string
+
+interface VisionEvalReportListItem {
+  reportId: string
+  suiteIds: string[]
+  scenario: string
+  result: VisionReportResult
+  generatedAt: string
+  passRate: number
+  totalSamples: number
+  totalTasks: number
+  failedTasks: number
+  privacyGateStatus: VisionPrivacyGateStatus
+  schemaStatus: VisionSchemaStatus
+  hashStatus: VisionHashStatus
+  failureCategoryCounts: Record<string, number>
+}
+
+interface VisionPrivacyGateCheck {
+  id: string
+  label: string
+  status: VisionPrivacyGateStatus
+  reason?: string
+}
+
+interface VisionRedactionSummary {
+  contactNames: number
+  avatars: number
+  phones: number
+  emails: number
+  addresses: number
+  qrCodes: number
+  chatMessages: number
+  keywords: number
+  otherPii: number
+}
+
+interface VisionReplaySamplePreview {
+  sampleId: string
+  suiteId: string
+  title: string
+  appType: string
+  locale: string
+  platform: string
+  imagePreview:
+    | {
+        kind: 'redacted_image'
+        objectUrlToken: string
+        width: number
+        height: number
+        sha256Short: string
+        redactionStatus: 'synthetic' | 'redacted' | 'hash_only'
+      }
+    | {
+        kind: 'placeholder'
+        reason:
+          | 'privacy_blocked'
+          | 'sample_hash_mismatch'
+          | 'schema_invalid'
+          | 'sample_file_missing'
+          | 'hash_only'
+      }
+  overlays: Array<
+    | {
+        type: 'bbox'
+        target: string
+        expected?: [number, number, number, number]
+        actual?: [number, number, number, number]
+        iou?: number
+        centerDistancePx?: number
+        status: 'passed' | 'failed' | 'missing'
+      }
+    | {
+        type: 'point'
+        target: string
+        expected?: { x: number; y: number }
+        actual?: { x: number; y: number }
+        distancePx?: number
+        status: 'passed' | 'failed' | 'missing'
+      }
+  >
+  metrics: Array<{
+    id: string
+    label: string
+    value: number
+    unit?: string
+    threshold?: number
+    status: 'passed' | 'failed' | 'warning'
+  }>
+  metadata: {
+    tags: string[]
+    createdAt: string
+    source: string
+    redactionStatus: string
+    sha256Short?: string
+  }
+}
+
+interface VisionEvalReportDetail {
+  report: VisionEvalReportListItem
+  privacyGate: {
+    status: VisionPrivacyGateStatus
+    checks: VisionPrivacyGateCheck[]
+    redactionSummary: VisionRedactionSummary
+  }
+  selectedSample?: VisionReplaySamplePreview
+  failureCategories: Array<{ category: VisionFailureCategory; count: number; ownerHint: string }>
+  exportAvailability: {
+    markdown: boolean
+    json: boolean
+    blockedReason?: string
+  }
 }
 
 const BUILTIN_PROVIDER_CATALOG: ProviderCatalogItem[] = [
@@ -707,6 +835,12 @@ function SettingsWindow(): React.JSX.Element {
           渠道适配
         </button>
         <button
+          className={`settings-nav-item ${section === 'visionReplay' ? 'active' : ''}`}
+          onClick={() => setSection('visionReplay')}
+        >
+          视觉回放
+        </button>
+        <button
           className={`settings-nav-item ${section === 'memory' ? 'active' : ''}`}
           onClick={() => setSection('memory')}
         >
@@ -739,6 +873,8 @@ function SettingsWindow(): React.JSX.Element {
           <IntentRoutingSettingsPage />
         ) : section === 'channel' ? (
           <ChannelAdapterSettingsPage />
+        ) : section === 'visionReplay' ? (
+          <VisionReplayPage />
         ) : section === 'memory' ? (
           <CustomerMemoryPage />
         ) : section === 'debug' ? (
@@ -1047,6 +1183,349 @@ function EmptyState({ label }: { label: string }): React.JSX.Element {
 
 function StatusChip({ label, tone }: { label: string; tone: 'info' | 'success' | 'warning' | 'danger' }): React.JSX.Element {
   return <span className={`status-chip ${tone}`}>{label}</span>
+}
+
+const VISION_FAILURE_CATEGORIES = [
+  'bbox_low_iou',
+  'point_far_from_expected',
+  'red_dot_false_positive',
+  'red_dot_false_negative',
+  'chat_main_diff',
+  'diff_size_mismatch',
+  'box_select_regions',
+  'sample_hash_mismatch',
+  'privacy_raw_screenshot_without_consent',
+  'privacy_base64_in_audit'
+]
+
+function VisionReplayPage(): React.JSX.Element {
+  const [reports, setReports] = useState<VisionEvalReportListItem[]>([])
+  const [selectedId, setSelectedId] = useState('')
+  const [detail, setDetail] = useState<VisionEvalReportDetail | null>(null)
+  const [query, setQuery] = useState('')
+  const [resultFilter, setResultFilter] = useState<VisionReportResult | 'all'>('all')
+  const [categoryFilter, setCategoryFilter] = useState<string>('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [exportMessage, setExportMessage] = useState('')
+
+  const loadReports = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const response = (await window.electron?.invoke('visionEval:listReports', {
+        query: query || undefined,
+        result: resultFilter === 'all' ? undefined : resultFilter,
+        category: categoryFilter || undefined,
+        limit: 50
+      })) as { reports?: VisionEvalReportListItem[] } | undefined
+      const nextReports = response?.reports || []
+      setReports(nextReports)
+      setSelectedId((current) =>
+        current && nextReports.some((report) => report.reportId === current)
+          ? current
+          : nextReports[0]?.reportId || ''
+      )
+    } catch (err: any) {
+      setError(err?.message || '视觉评测报告读取失败')
+      setReports([])
+    } finally {
+      setLoading(false)
+    }
+  }, [categoryFilter, query, resultFilter])
+
+  useEffect(() => {
+    void loadReports()
+  }, [loadReports])
+
+  useEffect(() => {
+    if (!selectedId) {
+      setDetail(null)
+      return
+    }
+    let cancelled = false
+    async function openReport(): Promise<void> {
+      setError('')
+      try {
+        const response = (await window.electron?.invoke('visionEval:openReport', {
+          reportId: selectedId
+        })) as { detail?: VisionEvalReportDetail } | undefined
+        if (!cancelled) setDetail(response?.detail || null)
+      } catch (err: any) {
+        if (!cancelled) setError(err?.message || '报告打开失败')
+      }
+    }
+    void openReport()
+    return () => {
+      cancelled = true
+    }
+  }, [selectedId])
+
+  const selectedReport = reports.find((report) => report.reportId === selectedId) || null
+  const categoryRows = useMemo(() => {
+    const fromDetail = new Map((detail?.failureCategories || []).map((item) => [item.category, item]))
+    return VISION_FAILURE_CATEGORIES.map((category) => {
+      const known = fromDetail.get(category)
+      return {
+        category,
+        count: known?.count || selectedReport?.failureCategoryCounts[category] || 0,
+        ownerHint: known?.ownerHint || visionOwnerHint(category)
+      }
+    })
+  }, [detail, selectedReport])
+
+  const exportReport = useCallback(
+    async (format: 'markdown' | 'json') => {
+      if (!selectedId) return
+      setExportMessage('')
+      try {
+        const response = (await window.electron?.invoke('visionEval:exportRedactedReport', {
+          reportId: selectedId,
+          format,
+          includeFailureDetails: true
+        })) as { export?: { fileName: string; content: string } } | undefined
+        setExportMessage(`已由 main 生成 ${response?.export?.fileName || format}，脱敏内容 ${response?.export?.content.length || 0} 字符`)
+      } catch (err: any) {
+        setExportMessage(err?.message || 'privacy gate 阻断导出')
+      }
+    },
+    [selectedId]
+  )
+
+  return (
+    <div className="draft-dashboard vision-replay-page">
+      <header className="draft-header vision-header">
+        <div>
+          <h1>视觉评测回放</h1>
+          <p>本地离线报告回放、privacy gate、失败分类和脱敏导出。</p>
+        </div>
+        <div className="draft-header-actions">
+          <StatusChip label="Local only" tone="info" />
+          <StatusChip label="Retention 7 天" tone="success" />
+          <StatusChip label="Raw blocked" tone="warning" />
+          <button className="review-btn secondary" onClick={() => void loadReports()}>刷新</button>
+        </div>
+      </header>
+
+      {error ? <ErrorBanner message={error} /> : null}
+
+      <div className="vision-replay-grid">
+        <section className="draft-panel vision-report-panel">
+          <div className="panel-title-row">
+            <h2>报告列表</h2>
+            <StatusChip label={loading ? '加载中' : `${reports.length} 个报告`} tone="info" />
+          </div>
+          <div className="vision-filter-row">
+            <input className="audit-search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索报告 ID / 场景" />
+            <select className="audit-search" value={resultFilter} onChange={(event) => setResultFilter(event.target.value as VisionReportResult | 'all')}>
+              <option value="all">全部状态</option>
+              <option value="passed">passed</option>
+              <option value="failed">failed</option>
+              <option value="warning">warning</option>
+              <option value="blocked">blocked</option>
+            </select>
+          </div>
+          {reports.length ? (
+            <div className="vision-report-list">
+              {reports.map((report) => (
+                <button
+                  key={report.reportId}
+                  className={`vision-report-row ${report.reportId === selectedId ? 'active' : ''}`}
+                  onClick={() => setSelectedId(report.reportId)}
+                >
+                  <span className="vision-report-id">{report.reportId}</span>
+                  <span>{report.scenario}</span>
+                  <StatusChip label={report.result} tone={visionTone(report.result)} />
+                  <span>{Math.round(report.passRate * 100)}%</span>
+                  <span>{report.schemaStatus}/{report.hashStatus}</span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <EmptyState label="尚无视觉评测报告；运行 npm run test:vision-eval" />
+          )}
+        </section>
+
+        <VisionReplayOverlayPanel detail={detail} />
+
+        <aside className="vision-side-panels">
+          <VisionImportPrivacyGatePanel detail={detail} />
+          <section className="draft-panel">
+            <div className="panel-title-row">
+              <h2>失败分类</h2>
+              {categoryFilter ? <button className="review-btn secondary" onClick={() => setCategoryFilter('')}>清除</button> : null}
+            </div>
+            <div className="vision-category-list">
+              {categoryRows.map((item) => (
+                <button
+                  key={item.category}
+                  className={`vision-category-chip ${categoryFilter === item.category ? 'active' : ''}`}
+                  onClick={() => setCategoryFilter(item.category)}
+                >
+                  <span>{item.category}</span>
+                  <strong>{item.count}</strong>
+                  <em>{item.ownerHint}</em>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          <section className="draft-panel">
+            <h2>导出脱敏 Markdown / JSON</h2>
+            <div className="vision-export-actions">
+              <button className="review-btn secondary" disabled={!detail?.exportAvailability.markdown} onClick={() => void exportReport('markdown')}>导出 Markdown</button>
+              <button className="review-btn primary" disabled={!detail?.exportAvailability.json} onClick={() => void exportReport('json')}>导出 JSON</button>
+            </div>
+            <div className="vision-redaction-summary">
+              {Object.entries(detail?.privacyGate.redactionSummary || {}).map(([key, value]) => (
+                <span key={key}>{key}: {value}</span>
+              ))}
+            </div>
+            <div className="error-banner">不导出完整截图</div>
+            {detail?.exportAvailability.blockedReason ? <ErrorBanner message={detail.exportAvailability.blockedReason} /> : null}
+            {exportMessage ? <p className="vision-export-message">{exportMessage}</p> : null}
+          </section>
+        </aside>
+      </div>
+    </div>
+  )
+}
+
+function VisionReplayOverlayPanel({ detail }: { detail: VisionEvalReportDetail | null }): React.JSX.Element {
+  const sample = detail?.selectedSample
+  const placeholderReason =
+    detail?.report.schemaStatus === 'invalid'
+      ? 'schema_invalid'
+      : detail?.report.hashStatus === 'mismatch'
+        ? 'sample_hash_mismatch'
+        : detail?.privacyGate.status === 'blocked'
+          ? 'privacy_blocked'
+          : sample?.imagePreview.kind === 'placeholder'
+            ? sample.imagePreview.reason
+            : ''
+
+  return (
+    <section className="draft-panel vision-overlay-panel">
+      <div className="panel-title-row">
+        <h2>样本 overlay</h2>
+        <div className="draft-header-actions">
+          <StatusChip label="100%" tone="info" />
+          <StatusChip label={detail?.report.hashStatus || 'unknown'} tone={detail?.report.hashStatus === 'mismatch' ? 'danger' : 'success'} />
+        </div>
+      </div>
+      {!detail ? (
+        <EmptyState label="选择报告后查看 overlay" />
+      ) : placeholderReason ? (
+        <div className="vision-preview-placeholder">
+          <strong>{placeholderReason}</strong>
+          <span>blocked/hash/schema invalid 不渲染图像预览</span>
+        </div>
+      ) : (
+        <div className="vision-preview-canvas">
+          <div className="vision-contact-rail">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <span key={index} />
+            ))}
+          </div>
+          <div className="vision-chat-skeleton">
+            <i />
+            <i />
+            <i />
+            <i />
+          </div>
+          {sample?.overlays.map((overlay, index) =>
+            overlay.type === 'bbox' ? (
+              <span key={`bbox-${index}`} className="vision-bbox expected" style={bboxStyle(overlay.expected)} />
+            ) : null
+          )}
+          {sample?.overlays.map((overlay, index) =>
+            overlay.type === 'bbox' ? (
+              <span key={`actual-bbox-${index}`} className="vision-bbox actual" style={bboxStyle(overlay.actual)} />
+            ) : null
+          )}
+          {sample?.overlays.map((overlay, index) =>
+            overlay.type === 'point' && overlay.expected ? (
+              <span key={`point-${index}`} className="vision-point expected" style={pointStyle(overlay.expected)} />
+            ) : null
+          )}
+          {sample?.overlays.map((overlay, index) =>
+            overlay.type === 'point' && overlay.actual ? (
+              <span key={`actual-point-${index}`} className="vision-point actual" style={pointStyle(overlay.actual)} />
+            ) : null
+          )}
+        </div>
+      )}
+
+      <div className="vision-metrics-strip">
+        {(sample?.metrics.length ? sample.metrics : [{ id: 'empty', label: 'IoU', value: 0, status: 'warning' as const }]).map((metric) => (
+          <div key={metric.id} className="vision-metric">
+            <span>{metric.label}</span>
+            <strong>{metric.value}{metric.unit || ''}</strong>
+            <StatusChip label={metric.status} tone={metric.status === 'failed' ? 'danger' : metric.status === 'warning' ? 'warning' : 'success'} />
+          </div>
+        ))}
+      </div>
+      <dl className="vision-detail-list">
+        <dt>报告 ID</dt>
+        <dd>{detail?.report.reportId || '-'}</dd>
+        <dt>样本</dt>
+        <dd>{sample ? `${sample.suiteId}/${sample.sampleId}` : '-'}</dd>
+        <dt>来源</dt>
+        <dd>{sample?.metadata.source || '-'}</dd>
+      </dl>
+    </section>
+  )
+}
+
+function VisionImportPrivacyGatePanel({ detail }: { detail: VisionEvalReportDetail | null }): React.JSX.Element {
+  return (
+    <section className="draft-panel">
+      <div className="panel-title-row">
+        <h2>导入 Privacy Gate</h2>
+        <StatusChip label={`privacy_gate: ${detail?.privacyGate.status || 'unknown'}`} tone={visionTone(detail?.privacyGate.status || 'warning')} />
+      </div>
+      <div className="vision-gate-list">
+        {(detail?.privacyGate.checks || []).map((check) => (
+          <div key={check.id} className={`vision-gate-row ${check.status}`}>
+            <strong>{check.label}</strong>
+            <span>{check.reason || check.status}</span>
+          </div>
+        ))}
+        {!detail?.privacyGate.checks.length ? <EmptyState label="选择报告后查看 gate 检查" /> : null}
+      </div>
+    </section>
+  )
+}
+
+function visionTone(status: VisionReportResult | VisionPrivacyGateStatus): 'info' | 'success' | 'warning' | 'danger' {
+  if (status === 'passed') return 'success'
+  if (status === 'blocked' || status === 'failed') return 'danger'
+  if (status === 'warning') return 'warning'
+  return 'info'
+}
+
+function visionOwnerHint(category: string): string {
+  if (category.includes('privacy') || category.includes('hash') || category.includes('schema')) return '@dev'
+  if (category.includes('box')) return '@ui'
+  if (category.includes('diff') || category.includes('red_dot') || category.includes('point') || category.includes('bbox')) return '@cv'
+  return '@qa'
+}
+
+function bboxStyle(box?: [number, number, number, number]): React.CSSProperties {
+  if (!box) return { display: 'none' }
+  return {
+    left: `${box[0] / 10}%`,
+    top: `${box[1] / 10}%`,
+    width: `${(box[2] - box[0]) / 10}%`,
+    height: `${(box[3] - box[1]) / 10}%`
+  }
+}
+
+function pointStyle(point: { x: number; y: number }): React.CSSProperties {
+  return {
+    left: `${point.x / 10}%`,
+    top: `${point.y / 10}%`
+  }
 }
 
 function statusLabel(status: ReplyDraft['status']): string {
