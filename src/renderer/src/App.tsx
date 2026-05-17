@@ -10,7 +10,7 @@ interface LogEntry {
 }
 
 type EngineStatus = 'idle' | 'running' | 'error'
-type SettingsSection = 'base' | 'agent' | 'review'
+type SettingsSection = 'base' | 'agent' | 'review' | 'knowledge'
 type AppType = 'wechat' | 'wework' | 'dingtalk' | 'lark' | 'slack' | 'telegram' | 'generic'
 
 type CaptureStrategy = 'auto' | 'vlm' | 'box-select'
@@ -155,6 +155,17 @@ interface AuditRecord {
   message?: string
   metadata: Record<string, unknown>
   occurredAt: string
+}
+
+interface KnowledgeEntry {
+  id: string
+  title: string
+  content: string
+  sourceType: 'manual' | 'faq' | 'doc' | 'url'
+  keywords: string[]
+  enabled: boolean
+  updatedAt: string
+  lastHitScore?: number
 }
 
 const BUILTIN_PROVIDER_CATALOG: ProviderCatalogItem[] = [
@@ -645,6 +656,12 @@ function SettingsWindow(): React.JSX.Element {
         >
           草稿审核
         </button>
+        <button
+          className={`settings-nav-item ${section === 'knowledge' ? 'active' : ''}`}
+          onClick={() => setSection('knowledge')}
+        >
+          知识库
+        </button>
       </aside>
 
       <main className="settings-main">
@@ -652,8 +669,10 @@ function SettingsWindow(): React.JSX.Element {
           <SettingsPanel />
         ) : section === 'agent' ? (
           <AgentPanel />
-        ) : (
+        ) : section === 'review' ? (
           <DraftAuditDashboard />
+        ) : (
+          <KnowledgeSettingsPage />
         )}
       </main>
     </div>
@@ -968,6 +987,191 @@ function statusTone(status: ReplyDraft['status']): 'info' | 'success' | 'warning
 
 function formatTime(value: string | number): string {
   return new Date(value).toLocaleString('zh-CN', { hour12: false })
+}
+
+const EMPTY_KNOWLEDGE: KnowledgeEntry = {
+  id: '',
+  title: '',
+  content: '',
+  sourceType: 'manual',
+  keywords: [],
+  enabled: true,
+  updatedAt: ''
+}
+
+function KnowledgeSettingsPage(): React.JSX.Element {
+  const [entries, setEntries] = useState<KnowledgeEntry[]>([])
+  const [selectedId, setSelectedId] = useState('')
+  const [draft, setDraft] = useState<KnowledgeEntry>(EMPTY_KNOWLEDGE)
+  const [query, setQuery] = useState('')
+  const [sourceType, setSourceType] = useState<'all' | KnowledgeEntry['sourceType']>('all')
+  const [enabledOnly, setEnabledOnly] = useState(false)
+  const [preview, setPreview] = useState<any>({ hits: [], providerFragmentCount: 0, providerFragmentLimit: 10 })
+  const [error, setError] = useState('')
+  const selected = entries.find((entry) => entry.id === selectedId) || null
+  const visibleEntries = entries.filter(
+    (entry) =>
+      (!enabledOnly || entry.enabled) &&
+      (sourceType === 'all' || entry.sourceType === sourceType) &&
+      (!query ||
+        `${entry.title} ${entry.content} ${entry.keywords.join(' ')}`
+          .toLocaleLowerCase()
+          .includes(query.toLocaleLowerCase()))
+  )
+  const enabledCount = entries.filter((entry) => entry.enabled).length
+
+  const loadKnowledge = useCallback(async () => {
+    const list = ((await window.electron?.invoke('knowledge:list')) || []) as KnowledgeEntry[]
+    setEntries(list)
+    const first = list[0]
+    setSelectedId((current) => current || first?.id || '')
+    setDraft(first || EMPTY_KNOWLEDGE)
+  }, [])
+
+  useEffect(() => {
+    void loadKnowledge()
+  }, [loadKnowledge])
+
+  useEffect(() => {
+    if (selected) setDraft(selected)
+  }, [selected])
+
+  useEffect(() => {
+    void (async () => {
+      const result = await window.electron?.invoke('knowledge:preview', query || draft.keywords.join(' '))
+      setPreview(result || { hits: [], providerFragmentCount: 0, providerFragmentLimit: 10 })
+    })()
+  }, [draft.keywords, query])
+
+  const startCreate = useCallback(() => {
+    setSelectedId('')
+    setDraft({ ...EMPTY_KNOWLEDGE, id: '' })
+    setError('')
+  }, [])
+
+  const saveKnowledge = useCallback(async () => {
+    if (preview.blocked) {
+      setError('已超过片段上限，请减少启用条目或关键词范围')
+      return
+    }
+    const result = await window.electron?.invoke('knowledge:save', draft)
+    if (!result?.success) {
+      setError(`错误：${result?.error || '保存失败，请重试'}`)
+      return
+    }
+    setError('')
+    await loadKnowledge()
+    setSelectedId(result.entry.id)
+  }, [draft, loadKnowledge, preview.blocked])
+
+  const toggleKnowledge = useCallback(
+    async (entry: KnowledgeEntry) => {
+      const previous = entries
+      setEntries((items) =>
+        items.map((item) => (item.id === entry.id ? { ...item, enabled: !item.enabled } : item))
+      )
+      const result = await window.electron?.invoke('knowledge:toggle', {
+        id: entry.id,
+        enabled: !entry.enabled
+      })
+      if (!result?.success) {
+        setEntries(previous)
+        setError('错误：保存失败，请重试')
+      }
+    },
+    [entries]
+  )
+
+  const keywordText = draft.keywords.join(', ')
+
+  return (
+    <div className="draft-dashboard knowledge-page">
+      <header className="draft-header">
+        <div>
+          <h1>知识库设置</h1>
+          <p>维护轻量知识条目，预览 ProviderInput 检索命中与片段预算。</p>
+        </div>
+        <div className="draft-header-actions">
+          <StatusChip label={`已启用条目 ${enabledCount}`} tone="success" />
+          <StatusChip label={`ProviderInput 当前 ${preview.providerFragmentCount || 0}/${preview.providerFragmentLimit || 10}`} tone={preview.blocked ? 'danger' : 'info'} />
+          <button className="review-btn primary" onClick={startCreate}>新增知识</button>
+        </div>
+      </header>
+
+      {error ? <ErrorBanner message={error} /> : null}
+
+      <div className="knowledge-grid">
+        <section className="draft-panel knowledge-list">
+          <div className="knowledge-toolbar">
+            <select value={sourceType} onChange={(event) => setSourceType(event.target.value as any)}>
+              <option value="all">全部状态</option>
+              <option value="manual">manual</option>
+              <option value="faq">faq</option>
+              <option value="doc">doc</option>
+              <option value="url">url</option>
+            </select>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索标题/关键词" />
+            <label><input type="checkbox" checked={enabledOnly} onChange={(event) => setEnabledOnly(event.target.checked)} /> 启用</label>
+          </div>
+          {visibleEntries.length ? (
+            visibleEntries.map((entry) => (
+              <button key={entry.id} className={`knowledge-row ${entry.id === selectedId ? 'active' : ''} ${entry.enabled ? '' : 'muted'}`} onClick={() => setSelectedId(entry.id)}>
+                <strong>{entry.title}</strong>
+                <StatusChip label={entry.sourceType.toUpperCase()} tone="info" />
+                <span>{entry.keywords.slice(0, 3).join('、') || '无关键词'}</span>
+                <button type="button" className="switch-btn" onClick={(event) => { event.stopPropagation(); void toggleKnowledge(entry) }}>{entry.enabled ? '启用' : '停用'}</button>
+              </button>
+            ))
+          ) : (
+            <EmptyState label="暂无知识条目" />
+          )}
+        </section>
+
+        <section className="draft-panel knowledge-editor">
+          <h2>{draft.id ? '编辑知识' : '新增知识'}</h2>
+          <label>标题 *</label>
+          <input value={draft.title} maxLength={100} onChange={(event) => setDraft({ ...draft, title: event.target.value })} />
+          <label>内容 *</label>
+          <textarea value={draft.content} maxLength={5000} onChange={(event) => setDraft({ ...draft, content: event.target.value })} />
+          <label>sourceType *</label>
+          <select value={draft.sourceType} onChange={(event) => setDraft({ ...draft, sourceType: event.target.value as KnowledgeEntry['sourceType'] })}>
+            <option value="manual">manual</option>
+            <option value="faq">faq</option>
+            <option value="doc">doc</option>
+            <option value="url">url</option>
+          </select>
+          <label>关键词 *</label>
+          <input value={keywordText} onChange={(event) => setDraft({ ...draft, keywords: event.target.value.split(/[,，\\n]/).map((item) => item.trim()).filter(Boolean) })} placeholder="Enter 或逗号分隔" />
+          <label className="knowledge-enabled"><input type="checkbox" checked={draft.enabled} onChange={(event) => setDraft({ ...draft, enabled: event.target.checked })} /> 启用知识条目</label>
+          <div className="review-actions">
+            <button className="review-btn neutral" onClick={() => setDraft(selected || EMPTY_KNOWLEDGE)}>取消</button>
+            <button className="review-btn primary" disabled={!draft.title.trim() || !draft.content.trim() || preview.blocked} onClick={saveKnowledge}>保存</button>
+          </div>
+        </section>
+
+        <section className="draft-panel knowledge-preview">
+          <h2>检索命中预览</h2>
+          {preview.hits?.length ? (
+            preview.hits.map((hit: any) => (
+              <div key={hit.id} className="hit-card">
+                <StatusChip label={String(hit.score.toFixed(2))} tone={hit.score >= 0.8 ? 'success' : 'warning'} />
+                <strong>{hit.title}</strong>
+                <p>{hit.content}</p>
+                <span>匹配关键词：{hit.keywordHits?.join('、') || '-'}</span>
+              </div>
+            ))
+          ) : (
+            <EmptyState label="暂无检索命中" />
+          )}
+          <div className={`budget-box ${preview.blocked ? 'blocked' : preview.providerFragmentCount / preview.providerFragmentLimit >= 0.8 ? 'warning' : ''}`}>
+            <h3>ProviderInput 片段上限</h3>
+            <strong>当前 {preview.providerFragmentCount || 0}/{preview.providerFragmentLimit || 10}</strong>
+            <p>{preview.blocked ? '已超过片段上限，请减少启用条目或关键词范围' : '当前检索片段接近上限时，建议优化关键词。'}</p>
+          </div>
+        </section>
+      </div>
+    </div>
+  )
 }
 
 function SettingsPanel() {

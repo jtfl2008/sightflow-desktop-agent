@@ -1,6 +1,6 @@
-import Store from 'electron-store'
+import { createRequire } from 'node:module'
 
-const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
+const nodeRequire = createRequire(__filename)
 
 export type KnowledgeSourceType = 'manual' | 'faq' | 'doc' | 'url'
 
@@ -28,14 +28,12 @@ interface KnowledgeStoreBackend {
 export class KnowledgeStore {
   private readonly backend: KnowledgeStoreBackend
   private readonly fragmentLimit: number
+  private sequence = 0
 
   constructor(options: { backend?: KnowledgeStoreBackend; fragmentLimit?: number } = {}) {
     this.backend =
       options.backend ??
-      (new StoreClass({
-        name: 'knowledge-store',
-        defaults: { entries: [] }
-      }) as unknown as KnowledgeStoreBackend)
+      (createElectronStoreBackend() as unknown as KnowledgeStoreBackend)
     this.fragmentLimit = options.fragmentLimit ?? 10
   }
 
@@ -92,9 +90,9 @@ export class KnowledgeStore {
         const score = Math.min(0.99, keywordHits.length * 0.25 + (titleHit ? 0.3 : 0) + (contentHit ? 0.2 : 0))
         return score > 0 ? { ...entry, score, keywordHits } : null
       })
-      .filter(Boolean)
+      .filter((hit): hit is KnowledgeHit => Boolean(hit))
       .sort((a, b) => b.score - a.score)
-      .slice(0, limit) as KnowledgeHit[]
+      .slice(0, limit)
 
     const providerFragmentCount = hits.length
     return {
@@ -123,7 +121,7 @@ export class KnowledgeStore {
       throw new Error('关键词不能超过 32 个字符')
     }
     return {
-      id: input.id || `kn-${Date.now()}`,
+      id: input.id || this.createId(),
       title,
       content,
       sourceType: input.sourceType,
@@ -132,4 +130,22 @@ export class KnowledgeStore {
       updatedAt: new Date().toISOString()
     }
   }
+
+  private createId(): string {
+    this.sequence += 1
+    return `kn-${Date.now()}-${this.sequence}`
+  }
+}
+
+function createElectronStoreBackend(): unknown {
+  const storeModule = nodeRequire('electron-store') as {
+    default?: new (options: Record<string, unknown>) => unknown
+  }
+  const StoreClass =
+    storeModule.default ??
+    (storeModule as unknown as new (options: Record<string, unknown>) => unknown)
+  return new StoreClass({
+    name: 'knowledge-store',
+    defaults: { entries: [] }
+  })
 }
