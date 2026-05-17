@@ -120,7 +120,7 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
         break
 
       case 'draft.approve':
-        await this.resolveDraft(event.draftId, 'approved', ctx)
+        await this.resolveDraft(event.draftId, 'approved', ctx, event.content)
         break
 
       case 'draft.skip':
@@ -268,7 +268,8 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
   private async resolveDraft(
     draftId: string,
     status: 'approved' | 'skipped' | 'takeover',
-    ctx: ChannelContext<GenericChannelState>
+    ctx: ChannelContext<GenericChannelState>,
+    contentOverride?: string
   ): Promise<void> {
     const draft = ctx.state.replyDrafts.find((item) => item.id === draftId)
     if (!draft || draft.status !== 'pending') {
@@ -283,6 +284,9 @@ export class GenericChannelSession implements ChannelSession<GenericChannelState
     }
 
     if (status === 'approved') {
+      if (contentOverride?.trim()) {
+        draft.content = contentOverride
+      }
       await this.sendReplyAndContinue(draft.content, ctx)
       ctx.state.consecutiveAutoSends = 0
       return

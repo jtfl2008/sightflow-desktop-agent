@@ -36,7 +36,7 @@ export type SessionEvent =
   | { type: 'provider.reply_text'; content: string }
   | { type: 'provider.skip' }
   | { type: 'provider.error'; error: string }
-  | { type: 'draft.approve'; draftId: string }
+  | { type: 'draft.approve'; draftId: string; content?: string }
   | { type: 'draft.skip'; draftId: string }
   | { type: 'draft.takeover'; draftId: string }
   | { type: 'check_unread' }

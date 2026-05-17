@@ -10,7 +10,7 @@ interface LogEntry {
 }
 
 type EngineStatus = 'idle' | 'running' | 'error'
-type SettingsSection = 'base' | 'agent'
+type SettingsSection = 'base' | 'agent' | 'review'
 type AppType = 'wechat' | 'wework' | 'dingtalk' | 'lark' | 'slack' | 'telegram' | 'generic'
 
 type CaptureStrategy = 'auto' | 'vlm' | 'box-select'
@@ -133,6 +133,28 @@ interface AppSettings {
   }
   defaultCaptureStrategy: CaptureStrategy
   capture: Partial<Record<AppType, PerAppCapture>>
+}
+
+interface ReplyDraft {
+  id: string
+  content: string
+  appType: AppType
+  screenshot: string
+  status: 'pending' | 'approved' | 'skipped' | 'takeover'
+  riskLabels?: string[]
+  policyReasons?: string[]
+  createdAt: number
+  resolvedAt?: number
+}
+
+interface AuditRecord {
+  id: string
+  category: 'engine' | 'layout' | 'provider' | 'draft' | 'policy' | 'message' | 'error'
+  action: string
+  severity: 'debug' | 'info' | 'warn' | 'error'
+  message?: string
+  metadata: Record<string, unknown>
+  occurredAt: string
 }
 
 const BUILTIN_PROVIDER_CATALOG: ProviderCatalogItem[] = [
@@ -617,13 +639,335 @@ function SettingsWindow(): React.JSX.Element {
         >
           智能体
         </button>
+        <button
+          className={`settings-nav-item ${section === 'review' ? 'active' : ''}`}
+          onClick={() => setSection('review')}
+        >
+          草稿审核
+        </button>
       </aside>
 
       <main className="settings-main">
-        {section === 'base' ? <SettingsPanel /> : <AgentPanel />}
+        {section === 'base' ? (
+          <SettingsPanel />
+        ) : section === 'agent' ? (
+          <AgentPanel />
+        ) : (
+          <DraftAuditDashboard />
+        )}
       </main>
     </div>
   )
+}
+
+const SAMPLE_DRAFTS: ReplyDraft[] = [
+  {
+    id: 'A129',
+    content:
+      '您好！请先检查一下垃圾邮件箱，重置邮件可能被误判为垃圾邮件。如果仍未收到，可以等待 5 分钟后重试。',
+    appType: 'generic',
+    screenshot: '',
+    status: 'pending',
+    riskLabels: ['敏感度 低', '命中知识 3 条'],
+    policyReasons: ['账号相关问题需要人工审核'],
+    createdAt: Date.now() - 1000 * 60 * 12
+  },
+  {
+    id: 'A130',
+    content: '我可以帮您核对订单状态，请提供订单号。',
+    appType: 'generic',
+    screenshot: '',
+    status: 'pending',
+    riskLabels: ['置信度 0.65'],
+    createdAt: Date.now() - 1000 * 60 * 22
+  }
+]
+
+function DraftAuditDashboard(): React.JSX.Element {
+  const [drafts, setDrafts] = useState<ReplyDraft[]>([])
+  const [selectedId, setSelectedId] = useState('')
+  const [auditRecords, setAuditRecords] = useState<AuditRecord[]>([])
+  const [draftText, setDraftText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [error, setError] = useState('')
+  const selectedDraft = drafts.find((draft) => draft.id === selectedId) || drafts[0] || null
+
+  const loadReviewData = useCallback(async () => {
+    const [runtimeDrafts, records] = await Promise.all([
+      window.electron?.invoke('review:listDrafts') as Promise<ReplyDraft[] | undefined>,
+      window.electron?.invoke('audit:list', 50) as Promise<AuditRecord[] | undefined>
+    ])
+    const nextDrafts = runtimeDrafts?.length ? runtimeDrafts : SAMPLE_DRAFTS
+    setDrafts(nextDrafts)
+    setAuditRecords(records || [])
+    setSelectedId((current) => current || nextDrafts[0]?.id || '')
+  }, [])
+
+  useEffect(() => {
+    void loadReviewData()
+  }, [loadReviewData])
+
+  useEffect(() => {
+    setDraftText(selectedDraft?.content || '')
+    setError('')
+  }, [selectedDraft])
+
+  const completeDraft = useCallback(
+    async (action: 'approve' | 'skip' | 'takeover', content?: string) => {
+      if (!selectedDraft) return
+      setSending(true)
+      setError('')
+      try {
+        const channel =
+          action === 'approve'
+            ? 'review:approveDraft'
+            : action === 'skip'
+              ? 'review:skipDraft'
+              : 'review:takeoverDraft'
+        const payload = action === 'approve' ? { draftId: selectedDraft.id, content } : selectedDraft.id
+        const result = await window.electron?.invoke(channel, payload)
+        if (result?.success === false) {
+          setError(result.error || '发送失败：网络超时，可重试或接管')
+          return
+        }
+        setDrafts((items) =>
+          items.map((item) =>
+            item.id === selectedDraft.id
+              ? {
+                  ...item,
+                  content: content || item.content,
+                  status:
+                    action === 'approve' ? 'approved' : action === 'skip' ? 'skipped' : 'takeover',
+                  resolvedAt: Date.now()
+                }
+              : item
+          )
+        )
+        await loadReviewData()
+      } catch (err: any) {
+        setError(`发送失败：${err?.message || '网络超时'}，可重试或接管`)
+      } finally {
+        setSending(false)
+      }
+    },
+    [loadReviewData, selectedDraft]
+  )
+
+  return (
+    <div className="draft-dashboard">
+      <header className="draft-header">
+        <div>
+          <h1>草稿审核与审计</h1>
+          <p>人工审核 Provider 生成的回复草稿，跟踪策略、发送和错误审计。</p>
+        </div>
+        <div className="draft-header-actions">
+          <StatusChip label="生产环境" tone="info" />
+          <StatusChip label={`错误队列 ${auditRecords.filter((r) => r.severity === 'error').length}`} tone="danger" />
+        </div>
+      </header>
+
+      <div className="draft-grid">
+        <DraftQueue drafts={drafts} selectedId={selectedDraft?.id || ''} onSelect={setSelectedId} />
+        <DraftReviewPanel
+          draft={selectedDraft}
+          value={draftText}
+          error={error}
+          sending={sending}
+          onChange={setDraftText}
+          onApprove={() => completeDraft('approve')}
+          onEditSend={() => completeDraft('approve', draftText)}
+          onSkip={() => completeDraft('skip')}
+          onTakeover={() => completeDraft('takeover')}
+        />
+        <SessionStatusPanel draft={selectedDraft} auditRecords={auditRecords} />
+      </div>
+
+      <AuditTable records={auditRecords} />
+    </div>
+  )
+}
+
+function DraftQueue({
+  drafts,
+  selectedId,
+  onSelect
+}: {
+  drafts: ReplyDraft[]
+  selectedId: string
+  onSelect: (id: string) => void
+}): React.JSX.Element {
+  return (
+    <section className="draft-panel draft-queue">
+      <div className="panel-title-row">
+        <h2>待审核草稿 ({drafts.filter((draft) => draft.status === 'pending').length})</h2>
+        <button className="icon-action" title="刷新">↻</button>
+      </div>
+      {drafts.length ? (
+        drafts.map((draft) => (
+          <button
+            key={draft.id}
+            className={`draft-item ${draft.id === selectedId ? 'active' : ''}`}
+            onClick={() => onSelect(draft.id)}
+          >
+            <span className="draft-item-title">会话 #{draft.id}</span>
+            <StatusChip label={statusLabel(draft.status)} tone={statusTone(draft.status)} />
+            <span className="draft-meta">来源：{APP_TYPE_LABELS[draft.appType] || 'Web 客服'}</span>
+            <span className="draft-preview">{draft.content}</span>
+          </button>
+        ))
+      ) : (
+        <EmptyState label="暂无待审核草稿" />
+      )}
+    </section>
+  )
+}
+
+function DraftReviewPanel({
+  draft,
+  value,
+  error,
+  sending,
+  onChange,
+  onApprove,
+  onEditSend,
+  onSkip,
+  onTakeover
+}: {
+  draft: ReplyDraft | null
+  value: string
+  error: string
+  sending: boolean
+  onChange: (value: string) => void
+  onApprove: () => void
+  onEditSend: () => void
+  onSkip: () => void
+  onTakeover: () => void
+}): React.JSX.Element {
+  if (!draft) return <EmptyState label="暂无待审核草稿" />
+  return (
+    <section className="draft-panel review-panel">
+      <div className="review-heading">
+        <div>
+          <h2>会话 #{draft.id}</h2>
+          <p>创建时间：{formatTime(draft.createdAt)} · 来源：{APP_TYPE_LABELS[draft.appType]}</p>
+        </div>
+        <StatusChip label={statusLabel(draft.status)} tone={statusTone(draft.status)} />
+      </div>
+      {error ? <ErrorBanner message={error} /> : null}
+      <div className="user-message">如何重置我的账户密码？我收不到重置邮件。</div>
+      <label className="draft-editor-label">AI 回复草稿（预览）</label>
+      <textarea className="draft-editor" value={value} onChange={(event) => onChange(event.target.value)} />
+      <div className="risk-row">
+        {(draft.riskLabels?.length ? draft.riskLabels : ['置信度 0.78']).map((label) => (
+          <StatusChip key={label} label={label} tone="info" />
+        ))}
+      </div>
+      <div className="review-actions">
+        <button className="review-btn primary" disabled={sending} onClick={onApprove}>批准发送</button>
+        <button className="review-btn secondary" disabled={sending} onClick={onEditSend}>编辑后发送</button>
+        <button className="review-btn neutral" disabled={sending} onClick={onSkip}>跳过</button>
+        <button className="review-btn danger" disabled={sending} onClick={onTakeover}>接管会话</button>
+      </div>
+    </section>
+  )
+}
+
+function SessionStatusPanel({
+  draft,
+  auditRecords
+}: {
+  draft: ReplyDraft | null
+  auditRecords: AuditRecord[]
+}): React.JSX.Element {
+  return (
+    <section className="draft-panel status-panel">
+      <h2>审核与状态</h2>
+      <dl className="status-list">
+        <dt>当前状态</dt>
+        <dd>{draft ? <StatusChip label={statusLabel(draft.status)} tone={statusTone(draft.status)} /> : '-'}</dd>
+        <dt>会话 ID</dt>
+        <dd>{draft?.id || '-'}</dd>
+        <dt>优先级</dt>
+        <dd>中</dd>
+        <dt>SLA 剩余</dt>
+        <dd className="danger-text">2 小时 15 分钟</dd>
+      </dl>
+      <h3>最近审计</h3>
+      <div className="audit-mini-list">
+        {auditRecords.slice(0, 5).map((record) => (
+          <div key={record.id} className="audit-mini-item">
+            <StatusChip label={record.category} tone={record.severity === 'error' ? 'danger' : 'info'} />
+            <span>{record.message || record.action}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function AuditTable({ records }: { records: AuditRecord[] }): React.JSX.Element {
+  const rows = records.length ? records : []
+  return (
+    <section className="draft-panel audit-table-panel">
+      <div className="audit-filter-bar">
+        <h2>审计记录</h2>
+        <input className="audit-search" placeholder="搜索会话或操作者" />
+        <button className="review-btn secondary">查询</button>
+      </div>
+      {rows.length ? (
+        <table className="audit-table">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>操作者</th>
+              <th>会话</th>
+              <th>操作</th>
+              <th>结果</th>
+              <th>备注</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.slice(0, 8).map((record) => (
+              <tr key={record.id}>
+                <td>{formatTime(record.occurredAt)}</td>
+                <td>系统</td>
+                <td>{String(record.metadata?.draftId || record.metadata?.appType || '-')}</td>
+                <td>{record.action}</td>
+                <td><StatusChip label={record.severity === 'error' ? '发送失败' : '已记录'} tone={record.severity === 'error' ? 'danger' : 'success'} /></td>
+                <td>{record.message || '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : (
+        <EmptyState label="暂无审计记录" />
+      )}
+    </section>
+  )
+}
+
+function ErrorBanner({ message }: { message: string }): React.JSX.Element {
+  return <div className="error-banner">发送失败：{message.replace(/^发送失败：/, '')}</div>
+}
+
+function EmptyState({ label }: { label: string }): React.JSX.Element {
+  return <div className="empty-state"><span>▱</span>{label}</div>
+}
+
+function StatusChip({ label, tone }: { label: string; tone: 'info' | 'success' | 'warning' | 'danger' }): React.JSX.Element {
+  return <span className={`status-chip ${tone}`}>{label}</span>
+}
+
+function statusLabel(status: ReplyDraft['status']): string {
+  return status === 'approved' ? '已批准' : status === 'skipped' ? '已跳过' : status === 'takeover' ? '已接管' : '待人工审核'
+}
+
+function statusTone(status: ReplyDraft['status']): 'info' | 'success' | 'warning' | 'danger' {
+  return status === 'approved' ? 'success' : status === 'takeover' ? 'danger' : status === 'skipped' ? 'warning' : 'info'
+}
+
+function formatTime(value: string | number): string {
+  return new Date(value).toLocaleString('zh-CN', { hour12: false })
 }
 
 function SettingsPanel() {

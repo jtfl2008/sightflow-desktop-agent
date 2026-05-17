@@ -75,6 +75,10 @@ export class RuntimeHost<TState> {
     return this.running
   }
 
+  getState(): TState {
+    return this.context.state
+  }
+
   dispatch(event: SessionEvent): void {
     this.enqueue(event)
   }

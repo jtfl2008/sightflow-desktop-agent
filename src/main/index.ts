@@ -563,6 +563,32 @@ app.whenReady().then(async () => {
     return auditStore.exportMarkdown(typeof limit === 'number' ? limit : undefined)
   })
 
+  ipcMain.handle('review:listDrafts', async () => {
+    return runtime?.getState().replyDrafts ?? []
+  })
+
+  ipcMain.handle('review:approveDraft', async (_event, args: { draftId: string; content?: string }) => {
+    runtime?.dispatch({ type: 'draft.approve', draftId: args.draftId, content: args.content })
+    auditStore.record({
+      category: 'draft',
+      action: 'approved',
+      metadata: { draftId: args.draftId, edited: Boolean(args.content) }
+    })
+    return { success: true }
+  })
+
+  ipcMain.handle('review:skipDraft', async (_event, draftId: string) => {
+    runtime?.dispatch({ type: 'draft.skip', draftId })
+    auditStore.record({ category: 'draft', action: 'skipped', metadata: { draftId } })
+    return { success: true }
+  })
+
+  ipcMain.handle('review:takeoverDraft', async (_event, draftId: string) => {
+    runtime?.dispatch({ type: 'draft.takeover', draftId })
+    auditStore.record({ category: 'draft', action: 'takeover', metadata: { draftId } })
+    return { success: true }
+  })
+
   // ── Capture / 框选向导 IPC ──
 
   ipcMain.handle(
