@@ -628,10 +628,17 @@ app.whenReady().then(async () => {
   ipcMain.handle('channelAdapter:save', async (_event, settings) => {
     try {
       const saved = channelAdapterStore.save(settings)
+      const action = saved.multiSessionEnabled
+        ? !saved.headerConfigured
+          ? 'layout.missing_header_draft_review'
+          : !saved.unreadIndicatorConfigured
+            ? 'layout.unread_low_confidence_fallback'
+            : 'layout.multisession_enabled'
+        : 'layout.single_session_enabled'
       auditStore.record({
         category: 'layout',
-        action: saved.multiSessionEnabled ? 'layout.multisession_enabled' : 'layout.single_session_enabled',
-        metadata: saved
+        action,
+        metadata: { ...saved }
       })
       return { success: true, settings: saved }
     } catch (error: unknown) {
@@ -699,6 +706,29 @@ app.whenReady().then(async () => {
         }
       }
       settingsStore.set(next as any)
+      if (args?.steps?.includes('header') || args?.steps?.includes('unreadIndicator')) {
+        const currentAdapter = channelAdapterStore.get(appType)
+        const savedAdapter = channelAdapterStore.save({
+          ...currentAdapter,
+          appType,
+          headerConfigured: Boolean(result.regions.header),
+          unreadIndicatorConfigured: Boolean(result.regions.unreadIndicator)
+        })
+        auditStore.record({
+          category: 'layout',
+          action:
+            savedAdapter.runtimeMode === 'multi_session'
+              ? 'layout.multisession_regions_configured'
+              : 'layout.multisession_degraded_after_wizard',
+          metadata: {
+            appType,
+            runtimeMode: savedAdapter.runtimeMode,
+            safetyMode: savedAdapter.safetyMode,
+            headerConfigured: savedAdapter.headerConfigured,
+            unreadIndicatorConfigured: savedAdapter.unreadIndicatorConfigured
+          }
+        })
+      }
       notifyCaptureRegionsUpdated(appType, result.regions)
       return { success: true, regions: result.regions }
     }
@@ -1101,7 +1131,12 @@ function coerceRegions(raw: unknown): BoxRegions | null {
     contactList,
     chatMain,
     inputBox,
+    header: coerceRect(r.header),
     unreadIndicator: coerceRect(r.unreadIndicator),
+    adapterId: typeof r.adapterId === 'string' ? r.adapterId : undefined,
+    adapterVersion: typeof r.adapterVersion === 'string' ? r.adapterVersion : undefined,
+    multiSessionEnabled:
+      typeof r.multiSessionEnabled === 'boolean' ? r.multiSessionEnabled : undefined,
     displayId: typeof r.displayId === 'number' ? r.displayId : undefined,
     scaleFactor: typeof r.scaleFactor === 'number' ? r.scaleFactor : undefined,
     capturedAt: typeof r.capturedAt === 'number' ? r.capturedAt : Date.now()

@@ -141,6 +141,21 @@
   height: 12px;
 }
 
+.overlay__layout-cell--header {
+  left: 30px;
+  right: 4px;
+  top: 4px;
+  height: 8px;
+}
+
+.overlay__layout-cell--unread {
+  left: 18px;
+  top: 10px;
+  width: 6px;
+  height: 34px;
+  border-radius: 999px;
+}
+
 /* committed steps: solid muted blue */
 .overlay__layout-cell.is-done {
   background: rgba(56, 189, 248, 0.45);

@@ -1411,3 +1411,93 @@ textarea.form-input {
     grid-column: 1 / -1;
   }
 }
+
+/* ─── Channel Adapter Settings ─── */
+.channel-grid {
+  display: grid;
+  grid-template-columns: 280px minmax(380px, 1fr) 320px;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.channel-page .draft-panel {
+  align-content: start;
+}
+
+.adapter-card,
+.state-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  margin-top: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+}
+
+.adapter-card p,
+.state-card p {
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.state-card.warning {
+  border-color: #fbbf24;
+  background: #fffbeb;
+}
+
+.state-card.success {
+  border-color: #86efac;
+  background: #f0fdf4;
+}
+
+.region-preview {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.region-preview span {
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  padding: 8px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.region-preview span.warning {
+  border-color: #fbbf24;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.region-preview span.danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.region-preview span.success {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+@media (max-width: 1180px) {
+  .channel-grid {
+    grid-template-columns: 280px minmax(360px, 1fr);
+  }
+
+  .channel-grid .draft-panel:last-child {
+    grid-column: 1 / -1;
+  }
+}

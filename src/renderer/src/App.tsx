@@ -26,7 +26,11 @@ interface BoxRegions {
   contactList: ScreenRect
   chatMain: ScreenRect
   inputBox: ScreenRect
+  header?: ScreenRect | null
   unreadIndicator: ScreenRect | null
+  adapterId?: string
+  adapterVersion?: string
+  multiSessionEnabled?: boolean
   displayId?: number
   scaleFactor?: number
   capturedAt: number
@@ -1395,6 +1399,22 @@ function ChannelAdapterSettingsPage(): React.JSX.Element {
     [appType, settings]
   )
 
+  const openAdapterWizard = useCallback(async () => {
+    const result = (await window.electron?.invoke('capture:openSetupWizard', {
+      appType,
+      steps: ['header', 'unreadIndicator']
+    })) as { success?: boolean; regions?: BoxRegions; reason?: string } | undefined
+    if (!result?.success) {
+      setError(result?.reason || '框选向导已取消')
+      return
+    }
+    setError('')
+    await save({
+      headerConfigured: Boolean(result.regions?.header),
+      unreadIndicatorConfigured: Boolean(result.regions?.unreadIndicator)
+    })
+  }, [appType, save])
+
   if (!settings) return <EmptyState label="渠道适配加载中" />
 
   return (
@@ -1455,10 +1475,10 @@ function ChannelAdapterSettingsPage(): React.JSX.Element {
           <h2>框选向导</h2>
           <div className="region-preview">
             {['contactList', 'chatMain', 'inputBox'].map((item) => <span key={item}>{item}</span>)}
-            {settings.multiSessionEnabled ? <span className="warning">header</span> : null}
-            {settings.multiSessionEnabled ? <span className="danger">unreadIndicator</span> : null}
+            {settings.multiSessionEnabled ? <span className={settings.headerConfigured ? 'success' : 'warning'}>header</span> : null}
+            {settings.multiSessionEnabled ? <span className={settings.unreadIndicatorConfigured ? 'success' : 'danger'}>unreadIndicator</span> : null}
           </div>
-          <button className="review-btn secondary" onClick={() => window.electron?.invoke('capture:openSetupWizard', { appType })}>追加框选</button>
+          <button className="review-btn secondary" onClick={openAdapterWizard}>追加框选 header / unreadIndicator</button>
           <div className="review-actions">
             <button className="review-btn secondary" onClick={() => save({ headerConfigured: true })}>标记 header 已配置</button>
             <button className="review-btn secondary" onClick={() => save({ unreadIndicatorConfigured: true })}>标记 unreadIndicator 已配置</button>
