@@ -72,14 +72,21 @@ export function normalizeChannelAdapterSettings(
 ): ChannelAdapterSettings {
   const multiSessionEnabled = input.multiSessionEnabled === true && input.enabled === true
   const headerConfigured = input.headerConfigured === true
+  const unreadIndicatorConfigured = input.unreadIndicatorConfigured === true
+  const multiSessionReady = multiSessionEnabled && headerConfigured && unreadIndicatorConfigured
   return {
     ...defaultChannelAdapterSettings(input.appType),
     ...input,
     multiSessionEnabled,
     headerConfigured,
-    runtimeMode: multiSessionEnabled ? (headerConfigured ? 'multi_session' : 'degraded_single_session') : 'single_session',
+    unreadIndicatorConfigured,
+    runtimeMode: multiSessionEnabled
+      ? multiSessionReady
+        ? 'multi_session'
+        : 'degraded_single_session'
+      : 'single_session',
     safetyMode: multiSessionEnabled
-      ? headerConfigured
+      ? multiSessionReady
         ? 'auto_switch_allowed'
         : 'draft_review_only'
       : 'default_single_session',
