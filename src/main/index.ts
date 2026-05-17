@@ -36,6 +36,7 @@ import { AuditStore } from './audit-store'
 import { KnowledgeStore } from './knowledge-store'
 import { IntentRoutingStore } from './intent-routing-store'
 import { ChannelAdapterStore } from './channel-adapter-store'
+import { CustomerMemoryStore } from './customer-memory-store'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
 const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260428'
@@ -137,6 +138,7 @@ const auditStore = new AuditStore()
 const knowledgeStore = new KnowledgeStore()
 const intentRoutingStore = new IntentRoutingStore()
 const channelAdapterStore = new ChannelAdapterStore()
+const customerMemoryStore = new CustomerMemoryStore()
 
 function createWindow(): void {
   // Create the browser window.
@@ -651,6 +653,84 @@ app.whenReady().then(async () => {
       })
       return { success: false, error: message }
     }
+  })
+
+  ipcMain.handle('customerMemory:getState', async () => {
+    customerMemoryStore.cleanupExpired()
+    return customerMemoryStore.getState()
+  })
+
+  ipcMain.handle('customerMemory:updateSettings', async (_event, settings) => {
+    const next = customerMemoryStore.updateSettings(settings || {})
+    auditStore.record({
+      category: 'provider',
+      action: 'customer_profile.settings_updated',
+      metadata: {
+        customerProfile: {
+          omittedReason: next.enabled ? undefined : 'disabled',
+          safetyHintApplied: true
+        },
+        retentionDays: next.defaultRetentionDays
+      }
+    })
+    return { success: true, settings: next, state: customerMemoryStore.getState() }
+  })
+
+  ipcMain.handle('customerMemory:createOrUpdateProfile', async (_event, request) => {
+    const result = customerMemoryStore.createOrUpdateProfile(request)
+    if (result.created) {
+      auditStore.record({
+        category: 'provider',
+        action: 'customer_profile.updated',
+        metadata: {
+          customerProfile: {
+            profileId: result.profile.profileId,
+            version: String(result.profile.version),
+            contactKeyHash: result.profile.contactKeyHash,
+            injectedFieldPaths: Object.keys(result.profile.fields),
+            sourceSummary: result.profile.provenance,
+            expired: false
+          }
+        }
+      })
+    }
+    return { success: result.created, result, state: customerMemoryStore.getState() }
+  })
+
+  ipcMain.handle('customerMemory:deleteProfile', async (_event, profileId: string) => {
+    const tombstone = customerMemoryStore.deleteProfile(profileId)
+    if (tombstone) {
+      auditStore.record({
+        category: 'provider',
+        action: 'customer_profile.deleted',
+        metadata: {
+          customerProfile: {
+            profileId: tombstone.profileId,
+            contactKeyHash: tombstone.contactKeyHash,
+            injectedFieldPaths: [],
+            omittedReason: 'deleted',
+            expired: false
+          },
+          reason: tombstone.reason
+        }
+      })
+    }
+    return { success: Boolean(tombstone), tombstone, state: customerMemoryStore.getState() }
+  })
+
+  ipcMain.handle('customerMemory:clearAllProfiles', async () => {
+    const tombstones = customerMemoryStore.clearAllProfiles()
+    auditStore.record({
+      category: 'provider',
+      action: 'customer_profile.deleted',
+      metadata: { count: tombstones.length, reason: 'clear_all' }
+    })
+    return { success: true, tombstones, state: customerMemoryStore.getState() }
+  })
+
+  ipcMain.handle('customerMemory:cleanupExpired', async () => {
+    const tombstones = customerMemoryStore.cleanupExpired()
+    return { success: true, tombstones, state: customerMemoryStore.getState() }
   })
 
   ipcMain.handle('review:listDrafts', async () => {
