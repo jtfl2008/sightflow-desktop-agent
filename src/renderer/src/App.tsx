@@ -1365,6 +1365,119 @@ function IntentRoutingSettingsPage(): React.JSX.Element {
   )
 }
 
+function ChannelAdapterSettingsPage(): React.JSX.Element {
+  const [appType, setAppType] = useState<AppType>('lark')
+  const [settings, setSettings] = useState<any | null>(null)
+  const [confirming, setConfirming] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    void (async () => {
+      const next = await window.electron?.invoke('channelAdapter:get', appType)
+      setSettings(next)
+    })()
+  }, [appType])
+
+  const save = useCallback(
+    async (patch: Record<string, unknown>) => {
+      const result = await window.electron?.invoke('channelAdapter:save', {
+        ...settings,
+        ...patch,
+        appType
+      })
+      if (!result?.success) {
+        setError(result?.error || 'invalid adapter')
+        return
+      }
+      setError('')
+      setSettings(result.settings)
+    },
+    [appType, settings]
+  )
+
+  if (!settings) return <EmptyState label="渠道适配加载中" />
+
+  return (
+    <div className="draft-dashboard channel-page">
+      <header className="draft-header">
+        <div>
+          <h1>多会话适配包</h1>
+          <p>默认单会话，不改变默认三框模式；多会话必须显式确认启用。</p>
+        </div>
+        <div className="draft-header-actions">
+          <StatusChip label={APP_TYPE_LABELS[appType]} tone="info" />
+          <StatusChip label={settings.safetyMode === 'draft_review_only' ? '仅允许草稿审核' : settings.runtimeMode === 'multi_session' ? '完整多会话' : '默认单会话'} tone={settings.runtimeMode === 'multi_session' ? 'success' : 'warning'} />
+        </div>
+      </header>
+      {error ? <ErrorBanner message={error} /> : null}
+      <div className="channel-grid">
+        <section className="draft-panel">
+          <h2>应用 / 渠道</h2>
+          <select className="audit-search" value={appType} onChange={(event) => setAppType(event.target.value as AppType)}>
+            {(['dingtalk', 'lark', 'slack', 'telegram', 'generic'] as AppType[]).map((item) => (
+              <option key={item} value={item}>{APP_TYPE_LABELS[item]}</option>
+            ))}
+          </select>
+          <div className="adapter-card">
+            <strong>{settings.manifestId || '未安装适配包'}</strong>
+            <p>capabilities: {(settings.capabilities || ['single_session']).join(', ')}</p>
+            <button className="review-btn secondary" onClick={() => save({ enabled: true, manifestId: `${appType}-adapter`, version: '1.0.0', capabilities: ['single_session', 'multi_session_unread_scan'] })}>安装示例适配包</button>
+          </div>
+        </section>
+        <section className="draft-panel">
+          <h2>渠道适配设置</h2>
+          <div className="state-card"><strong>默认单会话</strong><p>仅监听当前打开会话；不改变默认三框模式。</p></div>
+          <div className="state-card"><strong>已安装未启用</strong><p>启用前不会自动点击联系人列表。</p></div>
+          <div className="state-card warning"><strong>缺少 header</strong><p>仅允许草稿审核，不允许自动发送。</p></div>
+          <div className="state-card success"><strong>完整多会话</strong><p>header 与 unreadIndicator 配置完整后允许安全切换。</p></div>
+          <label className="knowledge-enabled">
+            <input
+              type="checkbox"
+              checked={settings.multiSessionEnabled}
+              onChange={(event) => {
+                if (event.target.checked && !confirming) {
+                  setConfirming(true)
+                  return
+                }
+                void save({ enabled: true, multiSessionEnabled: event.target.checked })
+              }}
+            />
+            启用多会话
+          </label>
+          {confirming ? (
+            <div className="error-banner">
+              启用多会话需显式确认。缺 header 时仅允许草稿审核。
+              <button className="review-btn primary" onClick={() => { setConfirming(false); void save({ enabled: true, multiSessionEnabled: true }) }}>确认启用</button>
+            </div>
+          ) : null}
+        </section>
+        <section className="draft-panel">
+          <h2>框选向导</h2>
+          <div className="region-preview">
+            {['contactList', 'chatMain', 'inputBox'].map((item) => <span key={item}>{item}</span>)}
+            {settings.multiSessionEnabled ? <span className="warning">header</span> : null}
+            {settings.multiSessionEnabled ? <span className="danger">unreadIndicator</span> : null}
+          </div>
+          <button className="review-btn secondary" onClick={() => window.electron?.invoke('capture:openSetupWizard', { appType })}>追加框选</button>
+          <div className="review-actions">
+            <button className="review-btn secondary" onClick={() => save({ headerConfigured: true })}>标记 header 已配置</button>
+            <button className="review-btn secondary" onClick={() => save({ unreadIndicatorConfigured: true })}>标记 unreadIndicator 已配置</button>
+          </div>
+        </section>
+      </div>
+      <section className="draft-panel audit-table-panel">
+        <h2>切换审计</h2>
+        <table className="audit-table">
+          <tbody>
+            <tr><td>低置信未读候选</td><td>已降级为单会话</td><td>chatMain_diff_only</td></tr>
+            <tr><td>点击验证失败</td><td>已降级为单会话</td><td>不盲点上一会话</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+  )
+}
+
 function SettingsPanel() {
   const [visionApiKey, setVisionApiKey] = useState('')
   const [testing, setTesting] = useState(false)

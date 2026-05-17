@@ -1,9 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-// 框选向导步骤。原本还有 'unreadIndicator'（红点定位），但实际使用里这一步
-// 价值很低（许多 IM 用蓝点 / 数字徽标，框红点不准）且容易让用户困惑，已下线。
-// BoxSelectDevice 现在统一走 contactList 整体红点扫描 + chatMain pixel diff 兜底。
-type WizardStepKey = 'contactList' | 'chatMain' | 'inputBox'
+// 默认框选向导仍只走 P0/M1 三框；渠道适配设置页可显式追加 header/unreadIndicator。
+type WizardStepKey = 'contactList' | 'chatMain' | 'inputBox' | 'header' | 'unreadIndicator'
 
 interface ScreenRect {
   x: number
@@ -16,7 +14,7 @@ interface BoxRegions {
   contactList: ScreenRect
   chatMain: ScreenRect
   inputBox: ScreenRect
-  // 保留字段以与后端类型兼容；wizard 不再采集，统一传 null。
+  header?: ScreenRect | null
   unreadIndicator: ScreenRect | null
   displayId?: number
   scaleFactor?: number
@@ -42,13 +40,17 @@ interface InitPayload {
 const STEP_TITLE: Record<WizardStepKey, string> = {
   contactList: '联系人 / 会话列表',
   chatMain: '会话主区域',
-  inputBox: '消息输入框'
+  inputBox: '消息输入框',
+  header: '会话 Header',
+  unreadIndicator: '未读标记区域'
 }
 
 const STEP_HINT: Record<WizardStepKey, string> = {
   contactList: '框选左侧的会话列表区域。',
   chatMain: '框选当前对话窗口的消息显示区。',
-  inputBox: '框选输入框，越精确越好。'
+  inputBox: '框选输入框，越精确越好。',
+  header: '框选当前会话顶部标题区域，用于切换后校验目标会话。',
+  unreadIndicator: '框选会话列表中未读标记可能出现的窄区域；不确定时可覆盖整列徽标位置。'
 }
 
 const MIN_DRAG_PX = 6
@@ -114,6 +116,8 @@ function LayoutPreview({
       {cell('contactList', 'list')}
       {cell('chatMain', 'chat')}
       {cell('inputBox', 'input')}
+      {steps.includes('header') ? cell('header', 'header') : null}
+      {steps.includes('unreadIndicator') ? cell('unreadIndicator', 'unread') : null}
     </div>
   )
 }
@@ -186,13 +190,26 @@ export function OverlayApp(): React.ReactElement {
       setStepIdx(nextIdx)
       return
     }
+    const getRequired = (key: 'contactList' | 'chatMain' | 'inputBox'): ScreenRect | null => {
+      const local = draft[key]
+      if (local) return toAbsolute(local)
+      return init.prefill?.[key] ?? null
+    }
+    const contactList = getRequired('contactList')
+    const chatMain = getRequired('chatMain')
+    const inputBox = getRequired('inputBox')
+    if (!contactList || !chatMain || !inputBox) {
+      window.electron?.send('overlay-wizard:cancel', { id: init.id })
+      return
+    }
     const regions: BoxRegions = {
-      contactList: toAbsolute(draft.contactList!),
-      chatMain: toAbsolute(draft.chatMain!),
-      inputBox: toAbsolute(draft.inputBox!),
-      // unreadIndicator 已从向导移除；BoxSelectDevice 用 contactList 整体扫红点
-      // + chatMain pixel diff 兜底，无需用户单独框出。
-      unreadIndicator: null,
+      contactList,
+      chatMain,
+      inputBox,
+      header: draft.header ? toAbsolute(draft.header) : init.prefill?.header ?? null,
+      unreadIndicator: draft.unreadIndicator
+        ? toAbsolute(draft.unreadIndicator)
+        : init.prefill?.unreadIndicator ?? null,
       displayId: init.display.id,
       scaleFactor: init.display.scaleFactor,
       capturedAt: Date.now()

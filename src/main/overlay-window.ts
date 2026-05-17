@@ -18,9 +18,9 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import type { AppType, BoxRegions, ScreenRect } from '../core/rpa/types'
 
-// 'unreadIndicator' 步骤已下线 —— 见 OverlayApp.tsx 的注释。BoxSelectDevice
-// 的 unreadIndicator 字段保留以便未来扩展，但 wizard 不再让用户框这一步。
-export type WizardStepKey = 'contactList' | 'chatMain' | 'inputBox'
+// Default wizard still uses the original three P0/M1 regions. Channel adapter
+// setup can opt into header/unreadIndicator as append-only steps.
+export type WizardStepKey = 'contactList' | 'chatMain' | 'inputBox' | 'header' | 'unreadIndicator'
 
 export interface WizardOpenOptions {
   appType: AppType
@@ -178,7 +178,8 @@ export function validateRegionsOnSameDisplay(regions: BoxRegions): {
     regions.contactList,
     regions.chatMain,
     regions.inputBox,
-    ...(regions.unreadIndicator ? [regions.unreadIndicator] : [])
+    ...(regions.unreadIndicator ? [regions.unreadIndicator] : []),
+    ...(regions.header ? [regions.header] : [])
   ]
   const displayIds = new Set(
     rects.map(
