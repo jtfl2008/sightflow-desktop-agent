@@ -40,6 +40,34 @@ const debugAdapter: DiagnosticsSourceAdapter = {
   }
 }
 
+const redactionBlockedAdapter: DiagnosticsSourceAdapter = {
+  source: 'runtime',
+  async query() {
+    return [
+      {
+        source: 'runtime',
+        sourceRecordId: 'runtime-secret',
+        createdAt: '2026-05-17T00:02:00.000Z',
+        raw: {
+          id: 'runtime-secret',
+          runId: 'run-secret',
+          action: 'provider.error',
+          message: 'Bearer secret-token',
+          reason: 'Email user@example.com full chat: hello there',
+          metadata: {
+            providerId: 'provider-secret',
+            contactHash: 'Alice Smith',
+            contactKeyHash: 'ch_abcdef123456',
+            webhookBody: {
+              response: 'plain webhook body'
+            }
+          }
+        }
+      }
+    ]
+  }
+}
+
 async function main(): Promise<void> {
   const runtimeOnly = await queryDiagnostics([runtimeAdapter, debugAdapter], {
     source: 'runtime',
@@ -63,6 +91,29 @@ async function main(): Promise<void> {
   if (related.ok) {
     assert.equal(related.records[0].relatedSources[0].source, 'debug_console')
     assert.equal(related.records[0].relatedSources[0].count, 1)
+  }
+
+  const redactionBlocked = await queryDiagnostics([redactionBlockedAdapter], {
+    source: 'runtime',
+    runId: 'run-secret'
+  })
+  assert.equal(redactionBlocked.ok, true)
+  if (redactionBlocked.ok) {
+    const record = redactionBlocked.records[0]
+    assert.equal(record.redaction.status, 'blocked')
+    assert.equal(record.contactHash, undefined)
+    assert.equal(record.primaryIntentId, undefined)
+    assert.equal(record.routeAction, undefined)
+    assert.equal(record.topErrorCode, undefined)
+    assert.equal(record.timeline.length, 9)
+    const serializedTimeline = JSON.stringify(record.timeline)
+    assert.equal(/Bearer secret-token|user@example\.com|full chat|Alice Smith|plain webhook body|provider-secret/.test(serializedTimeline), false)
+    for (const node of record.timeline) {
+      assert.equal(node.status, 'blocked')
+      assert.equal(node.summary, 'redaction_blocked')
+      assert.equal(Object.keys(node.detail).length, 1)
+      assert.equal(node.detail.type, node.capability)
+    }
   }
 
   console.log('diagnostics-aggregator mock tests passed')

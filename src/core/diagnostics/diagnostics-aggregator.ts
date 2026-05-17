@@ -1,6 +1,6 @@
 import { whitelistDiagnosticsNodeDetail } from './diagnostics-field-whitelist'
 import { checkDiagnosticsRedaction } from './diagnostics-redaction-checker'
-import { validateDiagnosticsQuery } from './diagnostics-contact-hash'
+import { isDiagnosticsContactHash, validateDiagnosticsQuery } from './diagnostics-contact-hash'
 import {
   DIAGNOSTICS_CAPABILITY_ORDER,
   DiagnosticsCapability,
@@ -10,6 +10,7 @@ import {
   DiagnosticsQueryResponse,
   DiagnosticsRecordView,
   DiagnosticsRelatedSourceSummary,
+  DiagnosticsRedactionSummary,
   DiagnosticsSourceAdapter,
   DiagnosticsSourceRecord,
   DiagnosticsTimelineNode
@@ -73,7 +74,7 @@ export function toDiagnosticsRecordView(
 ): DiagnosticsRecordView {
   const runId = stringAt(record.raw, ['runId', 'metadata.runId', 'reportId'])
   const draftId = stringAt(record.raw, ['draftId', 'metadata.draftId'])
-  const contactHash = stringAt(record.raw, [
+  const contactHashCandidate = stringAt(record.raw, [
     'contactHash',
     'contactKeyHash',
     'metadata.contactHash',
@@ -81,14 +82,23 @@ export function toDiagnosticsRecordView(
     'metadata.customerProfile.contactKeyHash',
     'metadata.channelContext.contactKeyHash'
   ])
+  const contactHash = contactHashCandidate && isDiagnosticsContactHash(contactHashCandidate)
+    ? contactHashCandidate.trim()
+    : undefined
   const primaryIntentId = stringAt(record.raw, ['primaryIntentId', 'metadata.primaryIntentId'])
   const routeAction = stringAt(record.raw, ['routeAction', 'metadata.routeAction'])
   const finalAction = inferFinalAction(record)
   const topErrorCode = inferTopErrorCode(record.raw)
-  const redaction = checkDiagnosticsRedaction(record.raw, { now })
-  const timeline = DIAGNOSTICS_CAPABILITY_ORDER.map((capability) =>
-    buildTimelineNode(record, capability, finalAction)
+  const redaction = withContactHashRedaction(
+    checkDiagnosticsRedaction(record.raw, { now }),
+    contactHashCandidate
   )
+  const isRedactionBlocked = redaction.status === 'blocked' || redaction.unknownFieldCount > 0
+  const timeline = isRedactionBlocked
+    ? DIAGNOSTICS_CAPABILITY_ORDER.map((capability) => buildBlockedTimelineNode(record, capability))
+    : DIAGNOSTICS_CAPABILITY_ORDER.map((capability) =>
+        buildTimelineNode(record, capability, finalAction)
+      )
   const stableId = record.sourceRecordId || runId || draftId || contactHash || record.createdAt
 
   return {
@@ -99,14 +109,42 @@ export function toDiagnosticsRecordView(
     draftId,
     contactHash,
     appType: stringAt(record.raw, ['appType', 'metadata.appType']),
-    finalAction,
-    topErrorCode,
-    primaryIntentId,
-    routeAction,
+    finalAction: isRedactionBlocked ? undefined : finalAction,
+    topErrorCode: isRedactionBlocked ? undefined : topErrorCode,
+    primaryIntentId: isRedactionBlocked ? undefined : primaryIntentId,
+    routeAction: isRedactionBlocked ? undefined : routeAction,
     createdAt: record.createdAt,
     timeline,
     redaction,
     relatedSources
+  }
+}
+
+function withContactHashRedaction(
+  redaction: DiagnosticsRedactionSummary,
+  contactHashCandidate?: string
+): DiagnosticsRedactionSummary {
+  if (!contactHashCandidate || isDiagnosticsContactHash(contactHashCandidate)) return redaction
+  return {
+    ...redaction,
+    status: 'blocked',
+    blockedTypes: Array.from(new Set([...redaction.blockedTypes, 'plaintext_contact'])).sort(),
+    omittedFieldPaths: Array.from(new Set([...redaction.omittedFieldPaths, 'contactHash'])).sort()
+  }
+}
+
+function buildBlockedTimelineNode(
+  record: DiagnosticsSourceRecord,
+  capability: DiagnosticsCapability
+): DiagnosticsTimelineNode {
+  return {
+    capability,
+    source: record.source,
+    status: 'blocked',
+    summary: 'redaction_blocked',
+    detail: whitelistDiagnosticsNodeDetail(capability, {}),
+    omittedReason: 'sanitized',
+    occurredAt: stringAt(record.raw, ['occurredAt', 'createdAt', 'generatedAt'])
   }
 }
 
