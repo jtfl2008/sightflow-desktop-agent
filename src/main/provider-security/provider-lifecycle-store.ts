@@ -13,6 +13,7 @@ export interface ProviderInstalledVersionRecord {
   version: string
   publisherId?: string
   keyId?: string
+  sourceUrl?: string
   installedAt: string
   activatedAt?: string
   manifestPath: string
@@ -41,6 +42,7 @@ export interface ProviderLifecycleCandidate {
   manifest: ProviderBundleManifest
   gate: ProviderProductionTrustDecision
   manifestPath: string
+  sourceUrl?: string
   activatedAt?: string
 }
 
@@ -261,6 +263,7 @@ function toInstalledVersionRecord(
     installedAt: candidate.installed.installedAt,
     activatedAt,
     manifestPath: candidate.manifestPath,
+    sourceUrl: candidate.sourceUrl,
     artifactHashes: { ...candidate.gate.artifactHashes },
     permissionNames: (candidate.manifest.permissions || []).map((permission) => permission.name),
     trustLevel: candidate.gate.trustLevel,
@@ -296,7 +299,20 @@ function rollbackIneligibleReasonForRecord(
   if (record.trustLevel !== 'trusted_signed' && record.trustLevel !== 'builtin') {
     return 'provider.lifecycle.previous_version_not_trusted'
   }
+  if (!isTrustedProviderSourceUrl(record.sourceUrl)) {
+    return 'provider.lifecycle.previous_version_untrusted_source'
+  }
   return undefined
+}
+
+function isTrustedProviderSourceUrl(value: unknown): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false
+  try {
+    const protocol = new URL(value).protocol
+    return protocol === 'https:' || protocol === 'file:' || protocol === 'builtin:'
+  } catch {
+    return false
+  }
 }
 
 function isAbsoluteOrEscaped(value: string): boolean {

@@ -36,6 +36,7 @@ interface LoadedRecoveryCandidate {
   installed: InstalledProviderInfo
   manifest: ProviderBundleManifest
   manifestPath: string
+  sourceUrl?: string
 }
 
 export interface ProviderRecoveryReconciliationOptions<TSettings extends ProviderRecoverySettings> {
@@ -79,6 +80,19 @@ export async function reconcileProviderLifecycleWithSettings<TSettings extends P
   const reasonCodes = new Set<string>()
   const checkedAt = (options.now ?? (() => new Date()))().toISOString()
   addInputRedactionReasons(options.settings, reasonCodes)
+
+  if (
+    options.settings.chatProvider.installed &&
+    !isTrustedProviderSourceUrl(options.settings.chatProvider.manifestUrl)
+  ) {
+    reasonCodes.add('provider.recovery.settings_untrusted_insecure_transport')
+    return fallbackToBuiltin(options, state, beforeSummary, reasonCodes, checkedAt, {
+      settingsProviderId: options.settings.chatProvider.installed.id,
+      settingsVersion: options.settings.chatProvider.installed.version,
+      lifecycleActiveVersion: activePointer?.activeVersion,
+      inconsistencyType: 'settings_points_to_untrusted_provider'
+    })
+  }
 
   const settingsCandidate = await loadSettingsCandidate(options)
   const activeCandidate =
@@ -282,7 +296,12 @@ async function loadSettingsCandidate<TSettings extends ProviderRecoverySettings>
   if (!installed) return null
   const manifest = await options.loadInstalledProviderManifest(installed)
   if (!manifest) return null
-  return { installed, manifest, manifestPath: relativeProviderManifestPath(installed) }
+  return {
+    installed,
+    manifest,
+    manifestPath: relativeProviderManifestPath(installed),
+    sourceUrl: options.settings.chatProvider.manifestUrl
+  }
 }
 
 async function loadLifecycleCandidate<TSettings extends ProviderRecoverySettings>(
@@ -299,7 +318,7 @@ async function evaluateCandidateGate<TSettings extends ProviderRecoverySettings>
   candidate: LoadedRecoveryCandidate
 ): Promise<ProviderProductionTrustDecision> {
   if (options.evaluateInstalledProviderGate) {
-    return options.evaluateInstalledProviderGate(candidate.installed, candidate.manifest)
+    return options.evaluateInstalledProviderGate(candidate.installed, candidate.manifest, candidate.sourceUrl)
   }
   const installDir = dirname(candidate.installed.entryFile)
   const artifactPaths = new Set<string>((candidate.manifest.artifacts || []).map((artifact) => artifact.path))
@@ -317,7 +336,7 @@ async function evaluateCandidateGate<TSettings extends ProviderRecoverySettings>
   }
   return evaluateProviderProductionGate({
     manifest: candidate.manifest,
-    sourceUrl: pathToFileURL(join(installDir, 'manifest.json')).toString(),
+    sourceUrl: candidate.sourceUrl || pathToFileURL(join(installDir, 'manifest.json')).toString(),
     trustedPublishers: options.trustedPublishers ?? [],
     artifactContentByPath
   })
@@ -348,6 +367,10 @@ async function tryRollbackToPrevious<TSettings extends ProviderRecoverySettings>
     reasonCodes.add('provider.recovery.previous_pointer_missing_install')
     return null
   }
+  if (!isTrustedProviderSourceUrl(candidate.sourceUrl || record.sourceUrl)) {
+    reasonCodes.add('provider.recovery.previous_pointer_untrusted_source')
+    return null
+  }
   const gate = await evaluateCandidateGate(options, candidate)
   if (!gate.productionInstallAllowed) {
     reasonCodes.add('provider.recovery.previous_pointer_gate_denied')
@@ -358,7 +381,8 @@ async function tryRollbackToPrevious<TSettings extends ProviderRecoverySettings>
     installed: candidate.installed,
     manifest: candidate.manifest,
     gate,
-    manifestPath: candidate.manifestPath
+    manifestPath: candidate.manifestPath,
+    sourceUrl: candidate.sourceUrl || record.sourceUrl
   })
   if (!rollback.ok) {
     for (const code of rollback.reasonCodes) reasonCodes.add(code)
@@ -504,6 +528,10 @@ function addSettingsUntrustedReason(
     reasonCodes.add('provider.recovery.settings_untrusted_revoked_publisher')
     return
   }
+  if (gate.reasonCodes.includes('provider.security.insecure_transport')) {
+    reasonCodes.add('provider.recovery.settings_untrusted_insecure_transport')
+    return
+  }
   if (gate.trustLevel === 'debug_only') {
     reasonCodes.add('provider.recovery.settings_untrusted_debug_only')
     return
@@ -541,6 +569,16 @@ function hasUrlQuery(value: string): boolean {
   if (!value) return false
   try {
     return Boolean(new URL(value).search)
+  } catch {
+    return false
+  }
+}
+
+function isTrustedProviderSourceUrl(value: unknown): boolean {
+  if (typeof value !== 'string' || !value.trim()) return false
+  try {
+    const protocol = new URL(value).protocol
+    return protocol === 'https:' || protocol === 'file:' || protocol === 'builtin:'
   } catch {
     return false
   }
