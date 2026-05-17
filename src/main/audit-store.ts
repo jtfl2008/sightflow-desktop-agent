@@ -38,6 +38,7 @@ export class AuditStore {
       id: this.createId(occurredAt),
       category: input.category,
       action: input.action,
+      source: input.source ?? 'runtime',
       severity: input.severity ?? (input.category === 'error' ? 'error' : 'info'),
       message: input.message,
       metadata: sanitizeMetadata(input.metadata ?? {}),

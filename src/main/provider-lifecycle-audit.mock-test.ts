@@ -87,6 +87,7 @@ function testProviderLifecycleAuditRedaction(): void {
 
   const records = store.getRecent(10)
   assert.equal(records.length, 3)
+  assert.ok(records.every((record) => record.source === 'provider_lifecycle'))
   assert.deepEqual(
     records.map((record) => record.action),
     ['provider_rollback', 'provider_update', 'provider_install']
@@ -100,6 +101,7 @@ function testProviderLifecycleAuditRedaction(): void {
   assert.equal(exported.includes('provider_install'), true)
   assert.equal(exported.includes('provider_update'), true)
   assert.equal(exported.includes('provider_rollback'), true)
+  assert.equal(exported.includes('provider_lifecycle'), true)
   assert.equal(exported.includes('trusted_signed'), true)
   assert.equal(exported.includes('provider.bundle.js'), true)
   assert.ok(

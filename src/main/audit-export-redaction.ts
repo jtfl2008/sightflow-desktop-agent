@@ -153,6 +153,7 @@ function redactRecord(record: AuditRecord, index: number, state: RedactionState)
     id: sanitizeString(record.id, `${path}.id`, state),
     category: record.category,
     action: sanitizeString(record.action, `${path}.action`, state),
+    source: record.source ?? 'runtime',
     severity: record.severity,
     message:
       record.message === undefined

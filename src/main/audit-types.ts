@@ -10,9 +10,17 @@ export type AuditCategory =
 
 export type AuditSeverity = 'debug' | 'info' | 'warn' | 'error'
 
+export type AuditSource =
+  | 'runtime'
+  | 'debug_console'
+  | 'vision_eval'
+  | 'workflow_preview'
+  | 'provider_lifecycle'
+
 export interface AuditEventInput {
   category: AuditCategory
   action: string
+  source?: AuditSource
   severity?: AuditSeverity
   message?: string
   metadata?: Record<string, unknown>
@@ -23,6 +31,7 @@ export interface AuditRecord {
   id: string
   category: AuditCategory
   action: string
+  source?: AuditSource
   severity: AuditSeverity
   message?: string
   metadata: Record<string, unknown>

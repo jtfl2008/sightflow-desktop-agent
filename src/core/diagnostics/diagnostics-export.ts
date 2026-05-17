@@ -61,7 +61,7 @@ function safeExportData(record: DiagnosticsRecordView): Record<string, unknown> 
     redaction: {
       status: record.redaction.status,
       blockedTypes: record.redaction.blockedTypes,
-      omittedFieldCount: record.redaction.omittedFieldPaths.length,
+      omittedFieldPaths: record.redaction.omittedFieldPaths,
       unknownFieldCount: record.redaction.unknownFieldCount,
       checkedAt: record.redaction.checkedAt
     },

@@ -7,12 +7,19 @@ import type {
   DiagnosticsQueryResponse
 } from './diagnosticsTypes'
 
-const SOURCES: DiagnosticsSource[] = ['runtime', 'debug_console', 'vision_eval', 'workflow_preview']
+const SOURCES: DiagnosticsSource[] = [
+  'runtime',
+  'debug_console',
+  'vision_eval',
+  'workflow_preview',
+  'provider_lifecycle'
+]
 const SOURCE_LABELS: Record<DiagnosticsSource, string> = {
   runtime: 'runtime',
   debug_console: 'debug_console',
   vision_eval: 'vision_eval',
-  workflow_preview: 'workflow_preview'
+  workflow_preview: 'workflow_preview',
+  provider_lifecycle: 'provider_lifecycle'
 }
 
 const FINAL_ACTIONS = [

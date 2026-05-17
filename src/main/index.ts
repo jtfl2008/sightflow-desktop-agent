@@ -45,6 +45,7 @@ import { registerDiagnosticsIpc } from './diagnostics-ipc'
 import { DiagnosticsStore } from './diagnostics-store'
 import {
   createEmptyDiagnosticsAdapter,
+  createProviderLifecycleDiagnosticsAdapter,
   createRuntimeDiagnosticsAdapter,
   createVisionEvalDiagnosticsAdapter
 } from './diagnostics-source-adapters'
@@ -411,7 +412,8 @@ app.whenReady().then(async () => {
       createRuntimeDiagnosticsAdapter(auditStore),
       createEmptyDiagnosticsAdapter('debug_console'),
       createVisionEvalDiagnosticsAdapter(visionReplayStore),
-      createEmptyDiagnosticsAdapter('workflow_preview')
+      createEmptyDiagnosticsAdapter('workflow_preview'),
+      createProviderLifecycleDiagnosticsAdapter(auditStore)
     ])
   )
 

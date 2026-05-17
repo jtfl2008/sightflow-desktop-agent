@@ -13,11 +13,37 @@ export function createRuntimeDiagnosticsAdapter(auditStore: AuditStore): Diagnos
     async query(input) {
       return auditStore
         .getRecent(input.limit + input.offset)
-        .filter((record) => isRuntimeAuditRecord(record.metadata))
+        .filter(
+          (record) => (record.source ?? sourceFromMetadata(record.metadata) ?? 'runtime') === 'runtime'
+        )
         .filter((record) => matchesQuery(record as unknown as Record<string, unknown>, input))
         .slice(input.offset, input.offset + input.limit)
         .map((record) => ({
           source: 'runtime' as const,
+          sourceRecordId: record.id,
+          raw: record as unknown as Record<string, unknown>,
+          createdAt: record.occurredAt
+        }))
+    }
+  }
+}
+
+export function createProviderLifecycleDiagnosticsAdapter(
+  auditStore: AuditStore
+): DiagnosticsSourceAdapter {
+  return {
+    source: 'provider_lifecycle',
+    async query(input) {
+      return auditStore
+        .getRecent(input.limit + input.offset)
+        .filter(
+          (record) =>
+            (record.source ?? sourceFromMetadata(record.metadata)) === 'provider_lifecycle'
+        )
+        .filter((record) => matchesQuery(record as unknown as Record<string, unknown>, input))
+        .slice(input.offset, input.offset + input.limit)
+        .map((record) => ({
+          source: 'provider_lifecycle' as const,
           sourceRecordId: record.id,
           raw: record as unknown as Record<string, unknown>,
           createdAt: record.occurredAt
@@ -67,9 +93,9 @@ export function createEmptyDiagnosticsAdapter(source: DiagnosticsSource): Diagno
   }
 }
 
-function isRuntimeAuditRecord(metadata: Record<string, unknown>): boolean {
+function sourceFromMetadata(metadata: Record<string, unknown>): string | undefined {
   const source = typeof metadata.source === 'string' ? metadata.source : undefined
-  return source === undefined || source === 'runtime'
+  return source
 }
 
 function matchesQuery(raw: Record<string, unknown>, input: NormalizedDiagnosticsQuery): boolean {

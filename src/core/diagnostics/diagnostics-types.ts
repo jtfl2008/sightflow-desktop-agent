@@ -3,6 +3,7 @@ export type DiagnosticsSource =
   | 'debug_console'
   | 'vision_eval'
   | 'workflow_preview'
+  | 'provider_lifecycle'
 
 export type DiagnosticsTimeRange = 'last_24h' | 'last_7d' | { from: string; to: string }
 
@@ -221,7 +222,8 @@ export const DIAGNOSTICS_SOURCES: DiagnosticsSource[] = [
   'runtime',
   'debug_console',
   'vision_eval',
-  'workflow_preview'
+  'workflow_preview',
+  'provider_lifecycle'
 ]
 
 export const DIAGNOSTICS_CAPABILITY_ORDER: DiagnosticsCapability[] = [

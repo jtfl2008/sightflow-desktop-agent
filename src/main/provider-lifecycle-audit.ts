@@ -24,21 +24,22 @@ export function recordProviderLifecycleAudit(
   auditStore.record({
     category: 'provider',
     action: input.action,
+    source: 'provider_lifecycle',
     severity: input.success ? 'info' : ('warn' satisfies AuditSeverity),
     message: input.success
       ? `${input.action} completed`
       : `${input.action} blocked or failed`,
     metadata: {
       success: input.success,
-      manifestUrl: redactProviderUrl(input.manifestUrl),
       providerId: input.manifest?.id || input.installed?.id,
-      providerName: input.manifest?.name || input.installed?.name,
-      version: input.manifest?.version || input.installed?.version,
-      previousProviderId: input.previousInstalled?.id,
+      targetVersion: input.manifest?.version || input.installed?.version,
       previousVersion: input.previousInstalled?.version,
       trustLevel: input.gate?.trustLevel,
-      productionInstallAllowed: input.gate?.productionInstallAllowed,
-      debugRunAllowed: input.gate?.debugRunAllowed,
+      decision: input.gate?.productionInstallAllowed
+        ? 'allowed'
+        : input.gate?.debugRunAllowed
+          ? 'debug_only'
+          : 'blocked',
       reasonCodes: input.gate?.reasonCodes || [],
       deniedPermissionNames: input.gate?.deniedPermissionNames || [],
       artifactHashes: input.gate?.artifactHashes || {},

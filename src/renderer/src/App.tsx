@@ -193,8 +193,9 @@ interface CustomerMemoryState {
 
 interface AuditRecord {
   id: string
-  category: 'engine' | 'layout' | 'provider' | 'draft' | 'policy' | 'message' | 'error'
+  category: 'engine' | 'layout' | 'provider' | 'draft' | 'policy' | 'intent' | 'message' | 'error'
   action: string
+  source?: 'runtime' | 'debug_console' | 'vision_eval' | 'workflow_preview' | 'provider_lifecycle'
   severity: 'debug' | 'info' | 'warn' | 'error'
   message?: string
   metadata: Record<string, unknown>

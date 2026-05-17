@@ -1,4 +1,9 @@
-export type DiagnosticsSource = 'runtime' | 'debug_console' | 'vision_eval' | 'workflow_preview'
+export type DiagnosticsSource =
+  | 'runtime'
+  | 'debug_console'
+  | 'vision_eval'
+  | 'workflow_preview'
+  | 'provider_lifecycle'
 
 export type DiagnosticsFinalAction =
   | 'draft_created'
