@@ -56,9 +56,16 @@ const ALLOWED_NESTED_OBJECT_PATHS = new Set([
 const ALLOWED_NESTED_OBJECT_PREFIXES = [
   'metadata.artifactHashes.',
   'metadata.channelContext.',
-  'metadata.customerProfile.sourceSummary.',
   'metadata.matchedKnowledge.'
 ]
+
+const CUSTOMER_PROFILE_SOURCE_SUMMARY_PATH = 'metadata.customerProfile.sourceSummary'
+const SAFE_SOURCE_SUMMARY_SCALAR_KEYS = new Set([
+  'fieldPath',
+  'source',
+  'confirmedByUser',
+  'auditId'
+])
 
 export function buildRedactedAuditExport(
   value: AuditExport,
@@ -164,6 +171,9 @@ function redactValue(
   state: RedactionState
 ): unknown {
   if (value === null || value === undefined) return value
+  if (normalizedPath === CUSTOMER_PROFILE_SOURCE_SUMMARY_PATH) {
+    return redactCustomerProfileSourceSummary(value, recordPath, state)
+  }
   if (typeof value === 'string') return sanitizeString(value, recordPath, state)
   if (typeof value === 'number' || typeof value === 'boolean') return value
   if (Array.isArray(value)) {
@@ -192,6 +202,55 @@ function redactValue(
     if (redacted !== undefined) out[key] = redacted
   }
   return out
+}
+
+function redactCustomerProfileSourceSummary(
+  value: unknown,
+  recordPath: string,
+  state: RedactionState
+): unknown {
+  if (!Array.isArray(value)) {
+    addBlocked(state, 'full_profile', recordPath)
+    return undefined
+  }
+
+  return value
+    .map((item, index) => {
+      const itemPath = `${recordPath}[${index}]`
+      if (!isPlainRecord(item)) {
+        addBlocked(state, 'full_profile', itemPath)
+        return undefined
+      }
+
+      const out: Record<string, unknown> = {}
+      for (const [key, child] of Object.entries(item)) {
+        const childPath = `${itemPath}.${key}`
+        if (!SAFE_SOURCE_SUMMARY_SCALAR_KEYS.has(key)) {
+          addBlocked(state, 'full_profile', childPath)
+          continue
+        }
+        if (!isSafeSourceSummaryScalar(child)) {
+          addBlocked(state, 'full_profile', childPath)
+          continue
+        }
+        if (typeof child === 'string') {
+          out[key] = sanitizeString(child, childPath, state)
+        } else {
+          out[key] = child
+        }
+      }
+      return out
+    })
+    .filter((item) => item !== undefined)
+}
+
+function isSafeSourceSummaryScalar(value: unknown): value is string | number | boolean | null {
+  return (
+    value === null ||
+    typeof value === 'string' ||
+    typeof value === 'number' ||
+    typeof value === 'boolean'
+  )
 }
 
 function sanitizeString(value: string, path: string, state: RedactionState): string {

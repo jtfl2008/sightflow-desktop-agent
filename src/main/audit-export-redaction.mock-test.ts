@@ -134,6 +134,76 @@ function testForbiddenContentReturnsExportSummary(): void {
   assert.ok(parsed.redaction.omittedFieldPaths.includes('records[0].metadata.customerProfile.fields'))
 }
 
+function testRawBackendSourceSummaryExportRedaction(): void {
+  const rawText = 'PRIVATE memory rawText Alice preference without generic detector'
+  const pendingText = 'pending original customer note'
+  const store = new AuditStore({
+    backend: new MemoryAuditBackend([
+      {
+        id: 'raw-source-summary',
+        category: 'provider',
+        action: 'customer_profile.injected',
+        severity: 'info',
+        occurredAt: fixedNow().toISOString(),
+        metadata: {
+          customerProfile: {
+            profileId: 'p3',
+            contactKeyHash: 'abcdef123456',
+            sourceSummary: [
+              {
+                fieldPath: 'preferenceNotes',
+                source: 'user_entered',
+                confirmedByUser: true,
+                auditId: 'a3',
+                rawText,
+                text: 'source text must not export',
+                content: 'source content must not export',
+                pending: pendingText
+              }
+            ]
+          }
+        }
+      }
+    ]),
+    now: fixedNow
+  })
+
+  const json = store.exportJson()
+  const markdown = store.exportMarkdown()
+  const parsed = JSON.parse(json)
+  const sourceSummary = parsed.records[0].metadata.customerProfile.sourceSummary[0]
+
+  for (const exported of [json, markdown]) {
+    assert.equal(exported.includes(rawText), false)
+    assert.equal(exported.includes('source text must not export'), false)
+    assert.equal(exported.includes('source content must not export'), false)
+    assert.equal(exported.includes(pendingText), false)
+    assert.equal(exported.includes('preferenceNotes'), true)
+    assert.equal(exported.includes('user_entered'), true)
+    assert.equal(exported.includes('a3'), true)
+  }
+  assert.deepEqual(Object.keys(sourceSummary).sort(), [
+    'auditId',
+    'confirmedByUser',
+    'fieldPath',
+    'source'
+  ])
+  assert.equal(parsed.blocked, false)
+  assert.equal(parsed.redaction.status, 'blocked')
+  assert.equal(parsed.redaction.unknownFieldCount, 0)
+  assert.ok(parsed.redaction.blockedTypes.includes('full_profile'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.customerProfile.sourceSummary[0].rawText'
+    )
+  )
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.customerProfile.sourceSummary[0].pending'
+    )
+  )
+}
+
 function testUnknownNestedExportObjectBlocksRecords(): void {
   const store = new AuditStore({ backend: new MemoryAuditBackend(), now: fixedNow })
   store.record({
@@ -165,6 +235,7 @@ function testUnknownNestedExportObjectBlocksRecords(): void {
 function main(): void {
   testCustomerMemoryExportRedaction()
   testForbiddenContentReturnsExportSummary()
+  testRawBackendSourceSummaryExportRedaction()
   testUnknownNestedExportObjectBlocksRecords()
   console.log('audit export redaction mock tests passed')
 }

@@ -84,10 +84,58 @@ function testExportsRedactSecretsAndClipboardHistory(): void {
   assert.equal(markdown.includes('Export blocked'), true)
 }
 
+function testRawBackendSourceSummaryExportRedaction(): void {
+  const rawText = 'PRIVATE sourceSummary rawText from legacy backend'
+  const store = new AuditStore({
+    backend: new MemoryAuditBackend([
+      {
+        id: 'raw-source-summary',
+        category: 'provider',
+        action: 'customer_profile.injected',
+        severity: 'info',
+        occurredAt: fixedNow().toISOString(),
+        metadata: {
+          customerProfile: {
+            profileId: 'p1',
+            contactKeyHash: 'abcdef123456',
+            sourceSummary: [
+              {
+                fieldPath: 'preferenceNotes',
+                source: 'user_entered',
+                confirmedByUser: true,
+                auditId: 'a1',
+                rawText
+              }
+            ]
+          }
+        }
+      }
+    ]),
+    now: fixedNow
+  })
+
+  const json = store.exportJson()
+  const markdown = store.exportMarkdown()
+  const parsed = JSON.parse(json)
+
+  assert.equal(json.includes(rawText), false)
+  assert.equal(markdown.includes(rawText), false)
+  assert.equal(json.includes('"fieldPath": "preferenceNotes"'), true)
+  assert.equal(markdown.includes('"fieldPath": "preferenceNotes"'), true)
+  assert.equal(parsed.redaction.status, 'blocked')
+  assert.ok(parsed.redaction.blockedTypes.includes('full_profile'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.customerProfile.sourceSummary[0].rawText'
+    )
+  )
+}
+
 function main(): void {
   testRecentRecordsSurviveStoreReload()
   testMaxRecordsIsBounded()
   testExportsRedactSecretsAndClipboardHistory()
+  testRawBackendSourceSummaryExportRedaction()
   console.log('audit store mock tests passed')
 }
 
