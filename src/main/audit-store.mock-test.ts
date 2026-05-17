@@ -131,11 +131,71 @@ function testRawBackendSourceSummaryExportRedaction(): void {
   )
 }
 
+function testRawBackendCustomerProfileScalarExportRedaction(): void {
+  const favoriteColor = 'PRIVATE profile note not caught by generic scanners'
+  const preferenceNotes = 'ordinary unschematized profile scalar'
+  const store = new AuditStore({
+    backend: new MemoryAuditBackend([
+      {
+        id: 'raw-profile-scalar',
+        category: 'provider',
+        action: 'customer_profile.injected',
+        severity: 'info',
+        occurredAt: fixedNow().toISOString(),
+        metadata: {
+          customerProfile: {
+            profileId: 'p2',
+            contactKeyHash: 'abcdef123456',
+            injectedFieldPaths: ['preferenceNotes'],
+            safetyHintApplied: true,
+            favoriteColor,
+            preferenceNotes,
+            sourceSummary: [
+              {
+                fieldPath: 'preferenceNotes',
+                source: 'user_entered',
+                confirmedByUser: true,
+                auditId: 'a2'
+              }
+            ]
+          }
+        }
+      }
+    ]),
+    now: fixedNow
+  })
+
+  const json = store.exportJson()
+  const markdown = store.exportMarkdown()
+  const parsed = JSON.parse(json)
+
+  assert.equal(json.includes(favoriteColor), false)
+  assert.equal(markdown.includes(favoriteColor), false)
+  assert.equal(json.includes(preferenceNotes), false)
+  assert.equal(markdown.includes(preferenceNotes), false)
+  assert.equal(json.includes('abcdef123456'), true)
+  assert.equal(markdown.includes('abcdef123456'), true)
+  assert.equal(parsed.redaction.status, 'blocked')
+  assert.equal(parsed.redaction.unknownFieldCount, 0)
+  assert.ok(parsed.redaction.blockedTypes.includes('full_profile'))
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.customerProfile.favoriteColor'
+    )
+  )
+  assert.ok(
+    parsed.redaction.omittedFieldPaths.includes(
+      'records[0].metadata.customerProfile.preferenceNotes'
+    )
+  )
+}
+
 function main(): void {
   testRecentRecordsSurviveStoreReload()
   testMaxRecordsIsBounded()
   testExportsRedactSecretsAndClipboardHistory()
   testRawBackendSourceSummaryExportRedaction()
+  testRawBackendCustomerProfileScalarExportRedaction()
   console.log('audit store mock tests passed')
 }
 
