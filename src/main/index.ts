@@ -4,7 +4,7 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { checkAndRequestPermissions } from './permission'
 import Store from 'electron-store'
-import { AIClient } from '../core/ai-client'
+import { AIClient, DEFAULT_AI_BASE_URL, DEFAULT_AI_MODEL } from '../core/ai-client'
 import { DesktopDevice } from '../core/device'
 import { RPADevice } from '../core/rpa-device'
 import { BoxSelectDevice } from '../core/box-select-device'
@@ -16,7 +16,6 @@ import {
 import { AppType, BoxRegions, CaptureStrategy, isWechatLike } from '../core/rpa/types'
 import { runBoxSelectWizard, type WizardStepKey } from './overlay-window'
 import {
-  BUILTIN_DOUBAO_PROVIDER_ID,
   getBuiltinDoubaoInstalledInfo,
   getBuiltinDoubaoManifestForUi,
   getInstalledProviderManifest,
@@ -34,9 +33,6 @@ import {
 } from './skill-server'
 const StoreClass = typeof Store === 'function' ? Store : ((Store as any).default as typeof Store)
 
-const FIXED_ARK_MODEL = 'doubao-seed-2-0-lite-260215'
-const FIXED_ARK_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
-
 interface PerAppCapture {
   strategy: CaptureStrategy
   regions: BoxRegions | null
@@ -47,6 +43,8 @@ interface AppSettings {
   appType: AppType
   vision: {
     apiKey: string
+    model: string
+    baseURL: string
   }
   chatProvider: {
     manifestUrl: string
@@ -64,7 +62,7 @@ const settingsStore = new StoreClass({
   defaults: {
     locale: 'zh',
     appType: 'wechat',
-    vision: { apiKey: '' },
+    vision: { apiKey: '', model: DEFAULT_AI_MODEL, baseURL: DEFAULT_AI_BASE_URL },
     chatProvider: {
       manifestUrl: '',
       installed: null,
@@ -209,7 +207,7 @@ app.whenReady().then(async () => {
       }
     }
 
-    // 没装过 → 回退到内置 doubao（apiKey 字段已剥离，使用视觉密钥）
+    // 没装过 → 回退到内置 doubao；聊天 apiKey 由聊天服务配置单独填写。
     const installed = await getBuiltinDoubaoInstalledInfo()
     const manifest = await getBuiltinDoubaoManifestForUi()
     return {
@@ -240,7 +238,11 @@ app.whenReady().then(async () => {
     const settings = normalizeSettings(config || settingsStore.store)
     if (runtimeDevice) {
       // setApiKey 在 BoxSelectDevice 上是 no-op，对 RPADevice 才生效。
-      runtimeDevice.setApiKey(settings.vision.apiKey)
+      runtimeDevice.setApiKey(
+        settings.vision.apiKey,
+        settings.vision.model,
+        settings.vision.baseURL
+      )
       runtimeDevice.setAppType(settings.appType)
     }
     if (runtime) {
@@ -250,11 +252,12 @@ app.whenReady().then(async () => {
   })
 
   ipcMain.handle('engine:testConnection', async (_event, config) => {
-    const apiKey = config?.apiKey || normalizeSettings(settingsStore.store).vision.apiKey
+    const settings = normalizeSettings(settingsStore.store)
+    const apiKey = config?.apiKey || settings.vision.apiKey
     const client = new AIClient({
       apiKey,
-      model: FIXED_ARK_MODEL,
-      baseURL: FIXED_ARK_BASE_URL
+      model: config?.model || settings.vision.model,
+      baseURL: config?.baseURL || settings.vision.baseURL
     })
     return client.testConnection()
   })
@@ -374,30 +377,20 @@ async function startEngineCore(rawConfig?: any): Promise<SkillStartResult> {
     const settings = normalizeSettings(rawConfig || settingsStore.store)
     const appType: AppType = settings.appType || 'wechat'
     const startupStrategy = resolveSettingsStrategy(appType, settings)
-    const providerNeedsVisionKey =
-      !settings.chatProvider.installed ||
-      settings.chatProvider.installed.id === BUILTIN_DOUBAO_PROVIDER_ID
-    const needsVisionKey = startupStrategy === 'vlm' || providerNeedsVisionKey
+    const needsVisionKey = startupStrategy === 'vlm'
 
     if (needsVisionKey && !settings.vision.apiKey) {
       return { ok: false, reason: 'no_vision_key', message: '请先填写视觉接口密钥' }
     }
 
-    // 没有自定义 provider → 走内置 doubao，使用视觉密钥
+    // 没有自定义 provider → 走内置 doubao，完全使用聊天服务自己的配置。
     let provider
     if (!settings.chatProvider.installed) {
-      const loaded = await loadBuiltinDoubaoProvider({
-        ...settings.chatProvider.config,
-        apiKey: settings.vision.apiKey
-      })
+      const loaded = await loadBuiltinDoubaoProvider(settings.chatProvider.config)
       provider = loaded.provider
     } else {
       const installedManifest = await getInstalledProviderManifest(settings.chatProvider.installed)
-      // doubao（无论是用户主动装的还是内置的）apiKey 由视觉密钥共享提供，不强校验
-      const isDoubao = settings.chatProvider.installed.id === BUILTIN_DOUBAO_PROVIDER_ID
-      const required = (installedManifest?.configSchema?.required || []).filter(
-        (key) => !(isDoubao && key === 'apiKey')
-      )
+      const required = installedManifest?.configSchema?.required || []
       const missing = required.find((key) => {
         const value = settings.chatProvider.config?.[key]
         return value === undefined || value === null || value === ''
@@ -410,11 +403,10 @@ async function startEngineCore(rawConfig?: any): Promise<SkillStartResult> {
         }
       }
 
-      const effectiveConfig = isDoubao
-        ? { ...settings.chatProvider.config, apiKey: settings.vision.apiKey }
-        : settings.chatProvider.config
-
-      const loaded = await loadInstalledProvider(settings.chatProvider.installed, effectiveConfig)
+      const loaded = await loadInstalledProvider(
+        settings.chatProvider.installed,
+        settings.chatProvider.config
+      )
       provider = loaded.provider
     }
 
@@ -540,7 +532,7 @@ async function buildDevice(
   if (effective === 'vlm') {
     const rpa = new RPADevice()
     rpa.setAppType(appType)
-    rpa.setApiKey(apiKey)
+    rpa.setApiKey(apiKey, settings.vision.model, settings.vision.baseURL)
     return { device: rpa, strategy: 'vlm' }
   }
 
@@ -654,19 +646,25 @@ function normalizeCapture(raw: unknown): Partial<Record<AppType, PerAppCapture>>
 
 function normalizeSettings(raw: any): AppSettings {
   const oldApiKey = typeof raw?.apiKey === 'string' ? raw.apiKey : ''
-  const oldModel = typeof raw?.model === 'string' && raw.model ? raw.model : FIXED_ARK_MODEL
+  const oldModel = typeof raw?.model === 'string' && raw.model ? raw.model : DEFAULT_AI_MODEL
+  const oldBaseURL =
+    typeof raw?.baseURL === 'string' && raw.baseURL
+      ? raw.baseURL
+      : typeof raw?.baseUrl === 'string' && raw.baseUrl
+        ? raw.baseUrl
+        : DEFAULT_AI_BASE_URL
   const oldSystemPrompt = typeof raw?.systemPrompt === 'string' ? raw.systemPrompt : ''
   const rawProviderConfig =
     raw?.chatProvider?.config && typeof raw.chatProvider.config === 'object'
       ? { ...raw.chatProvider.config }
       : {}
 
-  // Keep arbitrary provider config keys, and only backfill legacy volcengine fields for old persisted settings.
-  if (rawProviderConfig.apiKey === undefined && oldApiKey) {
-    rawProviderConfig.apiKey = oldApiKey
-  }
+  // Keep arbitrary provider config keys, and only backfill non-secret legacy volcengine fields.
   if (rawProviderConfig.model === undefined && oldModel) {
     rawProviderConfig.model = oldModel
+  }
+  if (rawProviderConfig.baseURL === undefined && oldBaseURL) {
+    rawProviderConfig.baseURL = oldBaseURL
   }
   if (rawProviderConfig.systemPrompt === undefined && oldSystemPrompt) {
     rawProviderConfig.systemPrompt = oldSystemPrompt
@@ -676,7 +674,9 @@ function normalizeSettings(raw: any): AppSettings {
     locale: raw?.locale === 'en' ? 'en' : 'zh',
     appType: coerceAppType(raw?.appType),
     vision: {
-      apiKey: raw?.vision?.apiKey || oldApiKey || ''
+      apiKey: raw?.vision?.apiKey || oldApiKey || '',
+      model: raw?.vision?.model || oldModel || DEFAULT_AI_MODEL,
+      baseURL: raw?.vision?.baseURL || raw?.vision?.baseUrl || oldBaseURL || DEFAULT_AI_BASE_URL
     },
     chatProvider: {
       manifestUrl: raw?.chatProvider?.manifestUrl || raw?.providerManifestUrl || '',

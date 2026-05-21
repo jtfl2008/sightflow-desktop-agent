@@ -34,6 +34,11 @@ provider-root/
         "type": "string",
         "title": "模型名称",
         "default": "your-model"
+      },
+      "baseURL": {
+        "type": "string",
+        "title": "服务地址",
+        "default": "https://example.com/v1"
       }
     },
     "required": ["apiKey"]
@@ -149,8 +154,8 @@ resources/providers/volcengine-ark/provider.bundle.js
 
 它的接入方式是：
 
-1. `manifest.json` 声明 `id = volcengine-ark`、`moduleType = module`、`capabilities = ["chat"]`，并暴露 `apiKey`、`model`、`systemPrompt` 三个配置项。
-2. `provider.bundle.js` 导出 `createProvider(context)`，从 `context.providerConfig` 读取 API Key、模型名和系统提示词。
+1. `manifest.json` 声明 `id = volcengine-ark`、`moduleType = module`、`capabilities = ["chat"]`，并暴露 `apiKey`、`model`、`baseURL`、`systemPrompt` 四个配置项。作为应用内置默认 Provider 使用时，这四个字段都由聊天服务卡片独立配置，不复用视觉配置。
+2. `provider.bundle.js` 导出 `createProvider(context)`，从 `context.providerConfig` 读取 API Key、模型名、服务地址和系统提示词。
 3. Provider 收到 `input.screenshot` 后，调用火山方舟 OpenAI 兼容接口：
 
 ```text

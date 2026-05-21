@@ -40,6 +40,7 @@ export function createProvider(context) {
           screenshot: input.screenshot,
           apiKey,
           model: providerConfig.model || DEFAULT_MODEL,
+          baseURL: providerConfig.baseURL || DEFAULT_BASE_URL,
           systemPrompt: providerConfig.systemPrompt || DEFAULT_PROMPT
         })
 
@@ -60,7 +61,7 @@ export function createProvider(context) {
   }
 }
 
-async function requestReply({ screenshot, apiKey, model, systemPrompt }) {
+async function requestReply({ screenshot, apiKey, model, baseURL, systemPrompt }) {
   const body = {
     model,
     messages: [
@@ -77,7 +78,7 @@ async function requestReply({ screenshot, apiKey, model, systemPrompt }) {
     stream: false
   }
 
-  const response = await fetch(`${DEFAULT_BASE_URL}/chat/completions`, {
+  const response = await fetch(`${baseURL}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,

@@ -9,7 +9,11 @@ import { AIClient } from './ai-client'
 import { AppType } from './rpa/types'
 import { BBox } from './rpa/vision-utils'
 import { captureChatMainArea } from './rpa/screenshot-utils'
-import { sendReplyAction, activeUnreadByClickAction, clickUnreadContactAction } from './rpa/input-utils'
+import {
+  sendReplyAction,
+  activeUnreadByClickAction,
+  clickUnreadContactAction
+} from './rpa/input-utils'
 import {
   hasUnreadMessage as hasUnreadMessageDetect,
   isChatContactUnread as isChatContactUnreadDetect
@@ -37,9 +41,9 @@ export class RPADevice implements DesktopDevice {
     this.appType = appType
   }
 
-  setApiKey(apiKey: string): void {
+  setApiKey(apiKey: string, model?: string, baseURL?: string): void {
     if (!apiKey) return
-    this.aiClient = new AIClient({ apiKey })
+    this.aiClient = new AIClient({ apiKey, model, baseURL })
   }
 
   // ── 生命周期 ──
@@ -70,7 +74,8 @@ export class RPADevice implements DesktopDevice {
       // 提前校验应用窗口，避免大模型成本和迷惑性报错
       const windowInfo = await getWechatWindowInfo(this.appType)
       if (!windowInfo) {
-        const appName = this.appType === 'wechat' ? '微信' : (this.appType === 'wework' ? '企业微信' : 'WhatsApp')
+        const appName =
+          this.appType === 'wechat' ? '微信' : this.appType === 'wework' ? '企业微信' : 'WhatsApp'
         return { success: false, error: `未找到${appName}窗口，请确保已打开且未被完全遮挡/最小化` }
       }
 
@@ -96,9 +101,10 @@ export class RPADevice implements DesktopDevice {
           firstContact: unreadResult.value.firstContact?.coordinates
         })
       } else {
-        const error = unreadResult.status === 'rejected'
-          ? unreadResult.reason
-          : (unreadResult.value as any)?.error
+        const error =
+          unreadResult.status === 'rejected'
+            ? unreadResult.reason
+            : (unreadResult.value as any)?.error
         console.error('[RPADevice] 未读区域检测失败:', error)
       }
 
@@ -117,9 +123,10 @@ export class RPADevice implements DesktopDevice {
           console.warn('[RPADevice] 输入框反推失败')
         }
       } else {
-        const error = layoutResult.status === 'rejected'
-          ? layoutResult.reason
-          : (layoutResult.value as any)?.error
+        const error =
+          layoutResult.status === 'rejected'
+            ? layoutResult.reason
+            : (layoutResult.value as any)?.error
         console.warn('[RPADevice] 主布局检测失败（非致命）:', error)
       }
 

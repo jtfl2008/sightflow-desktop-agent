@@ -77,6 +77,14 @@ interface InstalledProviderInfo {
   installedAt: string
 }
 
+interface SystemPromptPreset {
+  id: string
+  name: string
+  content: string
+  createdAt: number
+  updatedAt: number
+}
+
 interface PerAppCapture {
   strategy: CaptureStrategy
   regions: BoxRegions | null
@@ -87,6 +95,8 @@ interface AppSettings {
   appType: AppType
   vision: {
     apiKey: string
+    model: string
+    baseURL: string
   }
   chatProvider: {
     manifestUrl: string
@@ -102,10 +112,16 @@ const PROVIDER_NAME_LABELS: Record<string, string> = {
 }
 
 const PROVIDER_FIELD_LABELS: Record<string, string> = {
-  apiKey: '接口密钥',
+  apiKey: '聊天接口密钥',
   model: '模型名称',
+  baseURL: '服务地址',
   systemPrompt: '系统提示词'
 }
+
+const SYSTEM_PROMPT_LIST_KEY = 'systemPrompts'
+const ACTIVE_SYSTEM_PROMPT_ID_KEY = 'activeSystemPromptId'
+const DEFAULT_VISION_MODEL = 'doubao-seed-2-0-lite-260215'
+const DEFAULT_VISION_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 
 const PlayIcon = () => (
   <svg viewBox="0 0 24 24" fill="currentColor">
@@ -231,9 +247,7 @@ function ControlPanel({
   // 初次加载：读出当前 appType + 对应的框选区域
   useEffect(() => {
     void (async () => {
-      const settings = (await window.electron?.invoke('settings:getAll')) as
-        | AppSettings
-        | undefined
+      const settings = (await window.electron?.invoke('settings:getAll')) as AppSettings | undefined
       const initial = settings?.appType || 'wechat'
       setAppType(initial)
       await reloadRegionsForApp(initial)
@@ -379,11 +393,7 @@ function TargetAppQuickCard({
   onAppTypeChange,
   onOpenWizard
 }: TargetAppQuickCardProps): React.JSX.Element {
-  const statusText = isVlm
-    ? '自动识别（VLM）'
-    : regions
-      ? '已框选 3 / 3 个区域'
-      : '尚未框选'
+  const statusText = isVlm ? '自动识别（VLM）' : regions ? '已框选 3 / 3 个区域' : '尚未框选'
 
   return (
     <div className="card" style={{ marginBottom: 12 }}>
@@ -489,12 +499,10 @@ function BottomBar({
       showToast(t('control.start.novisionkey'), 'error')
       return
     }
-    // 没装自定义 provider → 走内置 doubao（getInstalled 会返回 isBuiltinDefault: true）
+    // 没装自定义 provider → 走内置 doubao（getInstalled 会返回默认 manifest）。
     const providerInfo = (await window.electron?.invoke('provider:getInstalled')) as {
       manifest: ProviderManifest | null
-      isBuiltinDefault?: boolean
     }
-    // doubao 默认共享视觉密钥，required 已剥离 apiKey
     const required = providerInfo?.manifest?.configSchema?.required || []
     const missing = required.find((key) => {
       const value = settings.chatProvider.config?.[key]
@@ -544,9 +552,11 @@ function BottomBar({
 }
 
 function SettingsPanel() {
-  // 设置页只关心 vision API key 和 chat provider；目标应用 + 框选已经搬到首屏
+  // 设置页只关心 vision 模型配置和 chat provider；目标应用 + 框选已经搬到首屏
   // ControlPanel 里的 TargetAppQuickCard，避免两处冗余配置造成困惑。
   const [visionApiKey, setVisionApiKey] = useState('')
+  const [visionModel, setVisionModel] = useState(DEFAULT_VISION_MODEL)
+  const [visionBaseURL, setVisionBaseURL] = useState(DEFAULT_VISION_BASE_URL)
   const [providerManifestUrl, setProviderManifestUrl] = useState('')
   const [installedProvider, setInstalledProvider] = useState<InstalledProviderInfo | null>(null)
   const [installedManifest, setInstalledManifest] = useState<ProviderManifest | null>(null)
@@ -561,6 +571,8 @@ function SettingsPanel() {
       const settings = (await window.electron?.invoke('settings:getAll')) as AppSettings | undefined
       if (settings) {
         setVisionApiKey(settings.vision?.apiKey || '')
+        setVisionModel(settings.vision?.model || DEFAULT_VISION_MODEL)
+        setVisionBaseURL(settings.vision?.baseURL || DEFAULT_VISION_BASE_URL)
         setProviderManifestUrl(settings.chatProvider?.manifestUrl || '')
         setInstalledProvider(settings.chatProvider?.installed || null)
         setProviderConfig(settings.chatProvider?.config || {})
@@ -587,16 +599,32 @@ function SettingsPanel() {
 
   const handleSaveVision = useCallback(async () => {
     const payload: Partial<AppSettings> = {
-      vision: { apiKey: visionApiKey }
+      vision: {
+        apiKey: visionApiKey,
+        model: visionModel,
+        baseURL: visionBaseURL
+      }
     }
     await window.electron?.invoke('settings:set', payload)
+    const savedSettings = (await window.electron?.invoke('settings:getAll')) as
+      | AppSettings
+      | undefined
+    if (savedSettings?.vision) {
+      setVisionApiKey(savedSettings.vision.apiKey || '')
+      setVisionModel(savedSettings.vision.model || DEFAULT_VISION_MODEL)
+      setVisionBaseURL(savedSettings.vision.baseURL || DEFAULT_VISION_BASE_URL)
+    }
     await window.electron?.invoke('engine:updateConfig', {
-      ...((await window.electron?.invoke('settings:getAll')) as AppSettings),
+      ...(savedSettings || ((await window.electron?.invoke('settings:getAll')) as AppSettings)),
       ...payload,
-      vision: { apiKey: visionApiKey }
+      vision: {
+        apiKey: visionApiKey,
+        model: visionModel,
+        baseURL: visionBaseURL
+      }
     })
     showToast(t('settings.saved'), 'success')
-  }, [visionApiKey])
+  }, [visionApiKey, visionModel, visionBaseURL])
 
   const handleInstallProvider = useCallback(async () => {
     if (!providerManifestUrl.trim()) {
@@ -641,8 +669,8 @@ function SettingsPanel() {
       return
     }
 
-    // 内置 doubao 默认模式：保存 config（model / systemPrompt 等），但 installed 仍为 null
-    // 这样下次仍走内置 doubao + 共享视觉密钥的路径
+    // 内置 doubao 默认模式：保存聊天服务配置，但 installed 仍为 null。
+    // 这样下次仍走内置 doubao，同时保留聊天服务独立模型配置。
     await window.electron?.invoke('settings:set', {
       chatProvider: {
         manifestUrl: providerManifestUrl,
@@ -659,7 +687,9 @@ function SettingsPanel() {
     setTesting(true)
     try {
       const result = await window.electron?.invoke('engine:testConnection', {
-        apiKey: visionApiKey
+        apiKey: visionApiKey,
+        model: visionModel,
+        baseURL: visionBaseURL
       })
       if (result?.success) {
         showToast(t('settings.testConnection.success'), 'success')
@@ -671,119 +701,416 @@ function SettingsPanel() {
     } finally {
       setTesting(false)
     }
-  }, [visionApiKey])
+  }, [visionApiKey, visionModel, visionBaseURL])
 
   return (
-    <div className="slide-up">
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-title">{t('settings.vision')}</div>
+    <div className="slide-up settings-stack">
+      <VisionSettingsCard
+        apiKey={visionApiKey}
+        model={visionModel}
+        baseURL={visionBaseURL}
+        testing={testing}
+        onApiKeyChange={setVisionApiKey}
+        onModelChange={setVisionModel}
+        onBaseURLChange={setVisionBaseURL}
+        onTestConnection={handleTestConnection}
+        onSave={handleSaveVision}
+      />
 
-        <div className="form-group">
-          <label className="form-label">{t('settings.visionApiKey')}</label>
-          <input
-            className="form-input"
-            type="password"
-            value={visionApiKey}
-            onChange={(e) => setVisionApiKey(e.target.value)}
-            placeholder={t('settings.visionApiKey.placeholder')}
-            autoComplete="off"
-          />
-          <div className="form-hint">{t('settings.visionApiKey.hint')}</div>
-        </div>
+      <ChatProviderSettingsCard
+        manifestUrl={providerManifestUrl}
+        installedProvider={installedProvider}
+        installedManifest={installedManifest}
+        providerConfig={providerConfig}
+        installing={installing}
+        isBuiltinDefault={isBuiltinDefault}
+        onManifestUrlChange={setProviderManifestUrl}
+        onInstallProvider={handleInstallProvider}
+        onProviderConfigChange={(key, value) =>
+          setProviderConfig((prev) => ({ ...prev, [key]: value }))
+        }
+        onSaveProvider={handleSaveProvider}
+      />
+    </div>
+  )
+}
 
-        <div className="form-group">
-          <label className="form-label">{t('settings.visionModel')}</label>
-          <input className="form-input" value="doubao-seed-2-0-lite-260215" disabled />
-        </div>
+interface VisionSettingsCardProps {
+  apiKey: string
+  model: string
+  baseURL: string
+  testing: boolean
+  onApiKeyChange: (value: string) => void
+  onModelChange: (value: string) => void
+  onBaseURLChange: (value: string) => void
+  onTestConnection: () => void
+  onSave: () => void
+}
 
-        <div className="form-group">
-          <label className="form-label">{t('settings.visionBaseUrl')}</label>
-          <input className="form-input" value="https://ark.cn-beijing.volces.com/api/v3" disabled />
-        </div>
+function VisionSettingsCard({
+  apiKey,
+  model,
+  baseURL,
+  testing,
+  onApiKeyChange,
+  onModelChange,
+  onBaseURLChange,
+  onTestConnection,
+  onSave
+}: VisionSettingsCardProps): React.JSX.Element {
+  return (
+    <div className="card">
+      <div className="card-title">{t('settings.vision')}</div>
 
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            className="btn btn-secondary"
-            onClick={handleTestConnection}
-            disabled={!visionApiKey || testing}
-          >
-            {testing ? t('settings.testConnection.testing') : t('settings.testConnection')}
-          </button>
-          <button className="btn btn-primary" onClick={handleSaveVision} style={{ flex: 1 }}>
-            {t('settings.saveVision')}
-          </button>
-        </div>
+      <div className="form-group">
+        <label className="form-label">{t('settings.visionApiKey')}</label>
+        <input
+          className="form-input"
+          type="password"
+          value={apiKey}
+          onChange={(e) => onApiKeyChange(e.target.value)}
+          placeholder={t('settings.visionApiKey.placeholder')}
+          autoComplete="off"
+        />
+        <div className="form-hint">{t('settings.visionApiKey.hint')}</div>
       </div>
 
-
-      <div className="card">
-        <div className="card-title">{t('settings.chatProvider')}</div>
-
-        {isBuiltinDefault ? (
-          <div className="form-hint" style={{ marginBottom: 12 }}>
-            默认使用内置 doubao 提供方，与上方视觉接口密钥共享 API Key，无需重复填写。
-            如需切换到其他聊天服务，请填入 manifest 地址安装。
-          </div>
-        ) : null}
-
-        <div className="form-group">
-          <label className="form-label">{t('settings.providerManifest')}</label>
-          <input
-            className="form-input"
-            value={providerManifestUrl}
-            onChange={(e) => setProviderManifestUrl(e.target.value)}
-            placeholder={t('settings.providerManifest.placeholder')}
-            autoComplete="off"
-          />
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          <button
-            className="btn btn-secondary"
-            onClick={handleInstallProvider}
-            disabled={!providerManifestUrl || installing}
-          >
-            {installing ? t('settings.providerInstall.installing') : t('settings.providerInstall')}
-          </button>
-        </div>
-
-        {installedProvider && !isBuiltinDefault ? (
-          <div className="form-group">
-            <label className="form-label">{t('settings.providerInstalled')}</label>
-            <div className="form-hint">
-              {getProviderDisplayName(installedProvider, installedManifest)} ·{' '}
-              {installedProvider.version}
-            </div>
-            <div className="form-hint">
-              {new Date(installedProvider.installedAt).toLocaleString()}
-            </div>
-          </div>
-        ) : null}
-
-        {installedManifest ? (
-          <>
-            {Object.entries(installedManifest.configSchema.properties).map(([key, field]) => (
-              <DynamicProviderField
-                key={key}
-                fieldKey={key}
-                field={field}
-                value={providerConfig[key]}
-                onChange={(value) => setProviderConfig((prev) => ({ ...prev, [key]: value }))}
-              />
-            ))}
-
-            <button
-              className="btn btn-primary"
-              onClick={handleSaveProvider}
-              style={{ width: '100%' }}
-            >
-              {t('settings.provider.save')}
-            </button>
-          </>
-        ) : (
-          <div className="form-hint">{t('settings.providerInstall.required')}</div>
-        )}
+      <div className="form-group">
+        <label className="form-label">{t('settings.visionModel')}</label>
+        <input
+          className="form-input"
+          value={model}
+          onChange={(e) => onModelChange(e.target.value)}
+          placeholder={DEFAULT_VISION_MODEL}
+          autoComplete="off"
+        />
       </div>
+
+      <div className="form-group">
+        <label className="form-label">{t('settings.visionBaseUrl')}</label>
+        <input
+          className="form-input"
+          value={baseURL}
+          onChange={(e) => onBaseURLChange(e.target.value)}
+          placeholder={DEFAULT_VISION_BASE_URL}
+          autoComplete="off"
+        />
+      </div>
+
+      <div className="form-actions">
+        <button
+          className="btn btn-secondary"
+          onClick={onTestConnection}
+          disabled={!apiKey || testing}
+        >
+          {testing ? t('settings.testConnection.testing') : t('settings.testConnection')}
+        </button>
+        <button className="btn btn-primary form-action-main" onClick={onSave}>
+          {t('settings.saveVision')}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+interface ChatProviderSettingsCardProps {
+  manifestUrl: string
+  installedProvider: InstalledProviderInfo | null
+  installedManifest: ProviderManifest | null
+  providerConfig: Record<string, any>
+  installing: boolean
+  isBuiltinDefault: boolean
+  onManifestUrlChange: (value: string) => void
+  onInstallProvider: () => void
+  onProviderConfigChange: (key: string, value: any) => void
+  onSaveProvider: () => void
+}
+
+function ChatProviderSettingsCard({
+  manifestUrl,
+  installedProvider,
+  installedManifest,
+  providerConfig,
+  installing,
+  isBuiltinDefault,
+  onManifestUrlChange,
+  onInstallProvider,
+  onProviderConfigChange,
+  onSaveProvider
+}: ChatProviderSettingsCardProps): React.JSX.Element {
+  const visibleProviderFields = installedManifest
+    ? Object.entries(installedManifest.configSchema.properties)
+    : []
+
+  return (
+    <div className="card">
+      <div className="card-title">{t('settings.chatProvider')}</div>
+
+      <div className="form-group">
+        <label className="form-label">{t('settings.providerManifest')}</label>
+        <input
+          className="form-input"
+          value={manifestUrl}
+          onChange={(e) => onManifestUrlChange(e.target.value)}
+          placeholder={t('settings.providerManifest.placeholder')}
+          autoComplete="off"
+        />
+      </div>
+
+      <div className="form-actions form-actions-compact">
+        <button
+          className="btn btn-secondary"
+          onClick={onInstallProvider}
+          disabled={!manifestUrl || installing}
+        >
+          {installing ? t('settings.providerInstall.installing') : t('settings.providerInstall')}
+        </button>
+      </div>
+
+      {installedProvider && !isBuiltinDefault ? (
+        <ProviderInstallMeta provider={installedProvider} manifest={installedManifest} />
+      ) : null}
+
+      {installedManifest ? (
+        <>
+          <ProviderConfigFields
+            fields={visibleProviderFields}
+            providerConfig={providerConfig}
+            onChange={onProviderConfigChange}
+          />
+
+          <button className="btn btn-primary btn-full" onClick={onSaveProvider}>
+            {t('settings.provider.save')}
+          </button>
+        </>
+      ) : (
+        <div className="form-hint">{t('settings.providerInstall.required')}</div>
+      )}
+    </div>
+  )
+}
+
+function ProviderInstallMeta({
+  provider,
+  manifest
+}: {
+  provider: InstalledProviderInfo
+  manifest: ProviderManifest | null
+}): React.JSX.Element {
+  return (
+    <div className="settings-provider-meta">
+      <span>{t('settings.providerInstalled')}</span>
+      <strong>
+        {getProviderDisplayName(provider, manifest)} · {provider.version}
+      </strong>
+      <span>{new Date(provider.installedAt).toLocaleString()}</span>
+    </div>
+  )
+}
+
+function ProviderConfigFields({
+  fields,
+  providerConfig,
+  onChange
+}: {
+  fields: Array<[string, ProviderSchemaField]>
+  providerConfig: Record<string, any>
+  onChange: (key: string, value: any) => void
+}): React.JSX.Element {
+  if (fields.length === 0) {
+    return <div className="form-hint provider-empty-hint">当前服务无需额外聊天配置</div>
+  }
+
+  return (
+    <>
+      {fields.map(([key, field]) => (
+        <DynamicProviderField
+          key={key}
+          fieldKey={key}
+          field={field}
+          value={providerConfig[key]}
+          providerConfig={providerConfig}
+          onConfigChange={onChange}
+        />
+      ))}
+    </>
+  )
+}
+
+function createSystemPromptPreset(content = '', name = '默认提示词'): SystemPromptPreset {
+  const now = Date.now()
+  return {
+    id: `prompt-${now}-${Math.random().toString(36).slice(2, 8)}`,
+    name,
+    content,
+    createdAt: now,
+    updatedAt: now
+  }
+}
+
+function createDefaultSystemPromptPreset(content = ''): SystemPromptPreset {
+  const now = Date.now()
+  return {
+    id: 'default-system-prompt',
+    name: '默认提示词',
+    content,
+    createdAt: now,
+    updatedAt: now
+  }
+}
+
+function normalizeSystemPromptPresets(
+  providerConfig: Record<string, any>,
+  fallbackContent: string
+): { prompts: SystemPromptPreset[]; activeId: string } {
+  const rawPrompts = Array.isArray(providerConfig[SYSTEM_PROMPT_LIST_KEY])
+    ? providerConfig[SYSTEM_PROMPT_LIST_KEY]
+    : []
+
+  const prompts = rawPrompts
+    .map((item: any, index: number): SystemPromptPreset | null => {
+      if (!item || typeof item !== 'object') return null
+      const id = typeof item.id === 'string' && item.id ? item.id : `prompt-${index}`
+      const name =
+        typeof item.name === 'string' && item.name.trim() ? item.name.trim() : `提示词 ${index + 1}`
+      const content = typeof item.content === 'string' ? item.content : ''
+      const createdAt = typeof item.createdAt === 'number' ? item.createdAt : Date.now()
+      const updatedAt = typeof item.updatedAt === 'number' ? item.updatedAt : createdAt
+      return { id, name, content, createdAt, updatedAt }
+    })
+    .filter((item): item is SystemPromptPreset => Boolean(item))
+
+  if (prompts.length === 0) {
+    prompts.push(createDefaultSystemPromptPreset(fallbackContent))
+  }
+
+  const activeId =
+    typeof providerConfig[ACTIVE_SYSTEM_PROMPT_ID_KEY] === 'string' &&
+    prompts.some((prompt) => prompt.id === providerConfig[ACTIVE_SYSTEM_PROMPT_ID_KEY])
+      ? providerConfig[ACTIVE_SYSTEM_PROMPT_ID_KEY]
+      : prompts[0].id
+
+  return { prompts, activeId }
+}
+
+function getActiveSystemPromptContent(providerConfig: Record<string, any>): string {
+  const { prompts, activeId } = normalizeSystemPromptPresets(
+    providerConfig,
+    typeof providerConfig.systemPrompt === 'string' ? providerConfig.systemPrompt : ''
+  )
+  return prompts.find((prompt) => prompt.id === activeId)?.content || ''
+}
+
+function SystemPromptManager({
+  providerConfig,
+  fallbackContent,
+  onConfigChange
+}: {
+  providerConfig: Record<string, any>
+  fallbackContent: string
+  onConfigChange: (key: string, value: any) => void
+}): React.JSX.Element {
+  const { prompts, activeId } = normalizeSystemPromptPresets(providerConfig, fallbackContent)
+  const activePrompt = prompts.find((prompt) => prompt.id === activeId) || prompts[0]
+
+  const commitPromptState = useCallback(
+    (nextPrompts: SystemPromptPreset[], nextActiveId: string) => {
+      const nextActivePrompt = nextPrompts.find((prompt) => prompt.id === nextActiveId)
+      onConfigChange(SYSTEM_PROMPT_LIST_KEY, nextPrompts)
+      onConfigChange(ACTIVE_SYSTEM_PROMPT_ID_KEY, nextActiveId)
+      onConfigChange('systemPrompt', nextActivePrompt?.content || '')
+    },
+    [onConfigChange]
+  )
+
+  const handleSelect = useCallback(
+    (nextActiveId: string) => {
+      commitPromptState(prompts, nextActiveId)
+    },
+    [commitPromptState, prompts]
+  )
+
+  const handleAdd = useCallback(() => {
+    const nextPrompt = createSystemPromptPreset('', `提示词 ${prompts.length + 1}`)
+    commitPromptState([...prompts, nextPrompt], nextPrompt.id)
+  }, [commitPromptState, prompts])
+
+  const handleDelete = useCallback(() => {
+    if (prompts.length <= 1) {
+      commitPromptState([createDefaultSystemPromptPreset('')], 'default-system-prompt')
+      return
+    }
+    const nextPrompts = prompts.filter((prompt) => prompt.id !== activeId)
+    commitPromptState(nextPrompts, nextPrompts[0].id)
+  }, [activeId, commitPromptState, prompts])
+
+  const handleNameChange = useCallback(
+    (name: string) => {
+      const nextPrompts = prompts.map((prompt) =>
+        prompt.id === activeId ? { ...prompt, name, updatedAt: Date.now() } : prompt
+      )
+      commitPromptState(nextPrompts, activeId)
+    },
+    [activeId, commitPromptState, prompts]
+  )
+
+  const handleContentChange = useCallback(
+    (content: string) => {
+      const nextPrompts = prompts.map((prompt) =>
+        prompt.id === activeId ? { ...prompt, content, updatedAt: Date.now() } : prompt
+      )
+      commitPromptState(nextPrompts, activeId)
+    },
+    [activeId, commitPromptState, prompts]
+  )
+
+  return (
+    <div className="system-prompt-editor">
+      <div className="system-prompt-toolbar">
+        <select
+          className="form-input system-prompt-select"
+          value={activeId}
+          onChange={(event) => handleSelect(event.target.value)}
+        >
+          {prompts.map((prompt) => (
+            <option key={prompt.id} value={prompt.id}>
+              {prompt.name || '未命名提示词'}
+            </option>
+          ))}
+        </select>
+        <button
+          className="btn btn-secondary system-prompt-action"
+          type="button"
+          onClick={handleAdd}
+        >
+          新增
+        </button>
+        <button
+          className="btn btn-danger system-prompt-action"
+          type="button"
+          onClick={handleDelete}
+        >
+          删除
+        </button>
+      </div>
+
+      <input
+        className="form-input system-prompt-name"
+        value={activePrompt.name}
+        onChange={(event) => handleNameChange(event.target.value)}
+        placeholder="提示词名称"
+        autoComplete="off"
+      />
+
+      <textarea
+        className="form-input system-prompt-textarea"
+        rows={6}
+        value={activePrompt.content}
+        onChange={(event) => handleContentChange(event.target.value)}
+        placeholder="输入聊天服务的系统提示词"
+      />
+
+      <div className="form-hint">当前选中的提示词会作为聊天服务的系统提示词保存和使用。</div>
     </div>
   )
 }
@@ -792,12 +1119,14 @@ function DynamicProviderField({
   fieldKey,
   field,
   value,
-  onChange
+  providerConfig,
+  onConfigChange
 }: {
   fieldKey: string
   field: ProviderSchemaField
   value: any
-  onChange: (value: any) => void
+  providerConfig: Record<string, any>
+  onConfigChange: (key: string, value: any) => void
 }) {
   const label = getProviderFieldLabel(fieldKey, field)
   const normalizedValue =
@@ -816,7 +1145,7 @@ function DynamicProviderField({
         <select
           className="form-input"
           value={String(normalizedValue)}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onConfigChange(fieldKey, e.target.value)}
         >
           {(field.enum || []).map((option) => (
             <option key={option} value={option}>
@@ -829,23 +1158,22 @@ function DynamicProviderField({
           <input
             type="checkbox"
             checked={Boolean(normalizedValue)}
-            onChange={(e) => onChange(e.target.checked)}
+            onChange={(e) => onConfigChange(fieldKey, e.target.checked)}
           />
           {label}
         </label>
       ) : fieldKey === 'systemPrompt' ? (
-        <textarea
-          className="form-input"
-          rows={4}
-          value={String(normalizedValue)}
-          onChange={(e) => onChange(e.target.value)}
+        <SystemPromptManager
+          providerConfig={providerConfig}
+          fallbackContent={String(normalizedValue)}
+          onConfigChange={onConfigChange}
         />
       ) : (
         <input
           className="form-input"
           type={field.type === 'password' ? 'password' : 'text'}
           value={String(normalizedValue)}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => onConfigChange(fieldKey, e.target.value)}
           autoComplete="off"
         />
       )}

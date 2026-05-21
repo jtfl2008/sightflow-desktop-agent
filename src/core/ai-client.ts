@@ -1,7 +1,8 @@
 // src/core/ai-client.ts
 // AI 客户端 — 统一封装所有大模型调用
 //
-// 使用火山引擎 Ark OpenAI 兼容 /chat/completions 端点 + doubao-seed-2-0-lite
+// 使用 OpenAI 兼容 /chat/completions 端点。默认值指向火山引擎 Ark / Doubao，
+// 实际模型和服务地址由用户设置传入。
 // 两种用途：
 //   1. 聊天回复：截图 → AI 分析 → 回复文字
 //   2. VLM 视觉检测：截图 → AI 分析 → bbox/point 坐标
@@ -13,8 +14,8 @@ export interface AIClientConfig {
   systemPrompt: string
 }
 
-const DEFAULT_MODEL = 'doubao-seed-2-0-lite-260215'
-const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
+export const DEFAULT_AI_MODEL = 'doubao-seed-2-0-lite-260215'
+export const DEFAULT_AI_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 
 const REPLY_SYSTEM_PROMPT = `你是一个微信自动回复助手。你会收到一张微信/企业微信的聊天窗口截图。
 
@@ -34,8 +35,8 @@ export class AIClient {
   constructor(config: Partial<AIClientConfig> & { apiKey: string }) {
     this.config = {
       apiKey: config.apiKey,
-      model: config.model || DEFAULT_MODEL,
-      baseURL: config.baseURL || DEFAULT_BASE_URL,
+      model: config.model || DEFAULT_AI_MODEL,
+      baseURL: config.baseURL || DEFAULT_AI_BASE_URL,
       systemPrompt: config.systemPrompt || REPLY_SYSTEM_PROMPT
     }
   }
@@ -84,9 +85,7 @@ export class AIClient {
    * 纯文本调用（不带图片）— 用于 testConnection 等
    */
   async callText(userMessage: string): Promise<string> {
-    const data = await this.callAPI([
-      { role: 'user', content: userMessage }
-    ])
+    const data = await this.callAPI([{ role: 'user', content: userMessage }])
     return this.extractText(data)
   }
 
@@ -121,9 +120,7 @@ export class AIClient {
     imageBase64: string
   ): Promise<string> {
     const rawBase64 = this.stripBase64Prefix(imageBase64)
-    const imageUrl = rawBase64.startsWith('http')
-      ? rawBase64
-      : `data:image/png;base64,${rawBase64}`
+    const imageUrl = rawBase64.startsWith('http') ? rawBase64 : `data:image/png;base64,${rawBase64}`
 
     const data = await this.callAPI([
       { role: 'system', content: systemPrompt },

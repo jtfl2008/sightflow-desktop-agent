@@ -8,10 +8,14 @@ import { BBox } from './rpa/vision-utils'
 
 export class MockDevice implements DesktopDevice {
   setAppType(_appType: AppType): void {
+    void _appType
     // Mock 不依赖窗口类型
   }
 
-  setApiKey(_apiKey: string): void {
+  setApiKey(_apiKey: string, _model?: string, _baseURL?: string): void {
+    void _apiKey
+    void _model
+    void _baseURL
     // Mock: 不需要 API key
   }
 

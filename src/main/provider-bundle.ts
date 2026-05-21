@@ -77,7 +77,9 @@ interface ProviderBundleModule {
           run(input: ProviderInput): AsyncIterable<ProviderEvent>
         }
       }
-    | ((context: ProviderBundleContext) => { run(input: ProviderInput): AsyncIterable<ProviderEvent> })
+    | ((context: ProviderBundleContext) => {
+        run(input: ProviderInput): AsyncIterable<ProviderEvent>
+      })
 }
 
 export interface ProviderBundleContext {
@@ -183,9 +185,8 @@ export async function getBuiltinDoubaoManifestRaw(): Promise<ProviderBundleManif
 }
 
 /**
- * 拿到对外暴露的内置 doubao manifest：
- * - 移除 `apiKey` 字段（与视觉密钥共享，不需要用户重复填写）
- * - 同步从 required 列表里移除 apiKey
+ * 拿到对外暴露的内置 doubao manifest。
+ * 聊天服务的 apiKey、model、baseURL 与视觉配置完全独立。
  */
 export async function getBuiltinDoubaoManifestForUi(): Promise<ProviderBundleManifest | null> {
   const raw = await getBuiltinDoubaoManifestRaw()
@@ -193,17 +194,15 @@ export async function getBuiltinDoubaoManifestForUi(): Promise<ProviderBundleMan
 
   const properties: Record<string, ProviderSchemaField> = {}
   for (const [key, field] of Object.entries(raw.configSchema.properties)) {
-    if (key === 'apiKey') continue
     properties[key] = field
   }
-  const required = (raw.configSchema.required || []).filter((k) => k !== 'apiKey')
 
   return {
     ...raw,
     configSchema: {
       type: 'object',
       properties,
-      required
+      required: raw.configSchema.required || []
     }
   }
 }
@@ -311,7 +310,10 @@ export async function loadInstalledProvider(
   }
 }
 
-async function loadProviderBundleModule(entryFile: string, manifest: ProviderBundleManifest): Promise<ProviderBundleModule> {
+async function loadProviderBundleModule(
+  entryFile: string,
+  manifest: ProviderBundleManifest
+): Promise<ProviderBundleModule> {
   if (shouldUseEsmLoader(manifest, entryFile)) {
     // ESM has no writable require cache, so append a query string to force a fresh module instance.
     const entryUrl = pathToFileURL(entryFile)
@@ -325,9 +327,7 @@ async function loadProviderBundleModule(entryFile: string, manifest: ProviderBun
   return runtimeRequire(resolvedEntry) as ProviderBundleModule
 }
 
-function resolveCreateProvider(
-  loaded: ProviderBundleModule
-):
+function resolveCreateProvider(loaded: ProviderBundleModule):
   | ((context: ProviderBundleContext) => {
       run(input: ProviderInput): AsyncIterable<ProviderEvent>
     })
@@ -336,7 +336,11 @@ function resolveCreateProvider(
     return loaded.createProvider
   }
 
-  if (loaded.default && typeof loaded.default === 'object' && typeof loaded.default.createProvider === 'function') {
+  if (
+    loaded.default &&
+    typeof loaded.default === 'object' &&
+    typeof loaded.default.createProvider === 'function'
+  ) {
     return loaded.default.createProvider
   }
 
@@ -383,15 +387,27 @@ function validateManifest(input: any): ProviderBundleManifest {
   if (typeof input.entry !== 'string' || !input.entry.trim()) {
     throw new Error('Manifest 缺少有效 entry')
   }
-  if (input.moduleType !== undefined && input.moduleType !== 'module' && input.moduleType !== 'commonjs') {
+  if (
+    input.moduleType !== undefined &&
+    input.moduleType !== 'module' &&
+    input.moduleType !== 'commonjs'
+  ) {
     throw new Error('Manifest moduleType 仅支持 "module" 或 "commonjs"')
   }
-  if (!Array.isArray(input.capabilities) || input.capabilities.length !== 1 || input.capabilities[0] !== 'chat') {
+  if (
+    !Array.isArray(input.capabilities) ||
+    input.capabilities.length !== 1 ||
+    input.capabilities[0] !== 'chat'
+  ) {
     throw new Error('Manifest capabilities 仅支持 ["chat"]')
   }
 
   const configSchema = input.configSchema
-  if (!configSchema || configSchema.type !== 'object' || typeof configSchema.properties !== 'object') {
+  if (
+    !configSchema ||
+    configSchema.type !== 'object' ||
+    typeof configSchema.properties !== 'object'
+  ) {
     throw new Error('Manifest 缺少有效 configSchema')
   }
 
@@ -406,7 +422,10 @@ function validateManifest(input: any): ProviderBundleManifest {
       throw new Error(`字段 ${key} 缺少 title`)
     }
     if (field.type === 'select') {
-      if (!Array.isArray(field.enum) || field.enum.some((value: unknown) => typeof value !== 'string')) {
+      if (
+        !Array.isArray(field.enum) ||
+        field.enum.some((value: unknown) => typeof value !== 'string')
+      ) {
         throw new Error(`字段 ${key} 的 enum 无效`)
       }
     }
