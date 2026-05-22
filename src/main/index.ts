@@ -236,6 +236,12 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('engine:updateConfig', async (_event, config) => {
     const settings = normalizeSettings(config || settingsStore.store)
+    if (runtime?.isRunning()) {
+      return {
+        success: true,
+        deferred: true
+      }
+    }
     if (runtimeDevice) {
       // setApiKey 在 BoxSelectDevice 上是 no-op，对 RPADevice 才生效。
       runtimeDevice.setApiKey(
@@ -464,6 +470,8 @@ async function stopEngineCore(stopReason: string): Promise<SkillPauseResult> {
   }
   try {
     await runtime.stopSession(stopReason)
+    runtime = null
+    runtimeDevice = null
     notifyEngineStateChanged('idle')
     return { ok: true }
   } catch (error: any) {

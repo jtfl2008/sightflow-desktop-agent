@@ -107,6 +107,12 @@ interface AppSettings {
   capture: Partial<Record<AppType, PerAppCapture>>
 }
 
+interface RuntimeRefreshNotice {
+  tone: 'info' | 'warning'
+  title: string
+  message: string
+}
+
 const PROVIDER_NAME_LABELS: Record<string, string> = {
   'volcengine-ark': '火山方舟聊天服务'
 }
@@ -165,12 +171,27 @@ const BackIcon = () => (
 function App() {
   const [view, setView] = useState<View>('control')
   const [status, setStatus] = useState<EngineStatus>('idle')
+  const [runtimeRefreshNotice, setRuntimeRefreshNotice] = useState<RuntimeRefreshNotice | null>(
+    null
+  )
+
+  useEffect(() => {
+    void (async () => {
+      const engineStatus = (await window.electron?.invoke('engine:status')) as
+        | { running?: boolean }
+        | undefined
+      setStatus(engineStatus?.running ? 'running' : 'idle')
+    })()
+  }, [])
 
   // Sync UI status with engine state changes triggered out-of-band
   // (e.g. remote OpenClaw start/pause via the local skill HTTP server).
   useEffect(() => {
     const cleanup = window.electron?.on('engine:state', (data: { status: 'running' | 'idle' }) => {
       setStatus(data.status === 'running' ? 'running' : 'idle')
+      if (data.status === 'running') {
+        setRuntimeRefreshNotice(null)
+      }
     })
     return cleanup
   }, [])
@@ -192,14 +213,27 @@ function App() {
 
       <div className="app-content">
         {view === 'control' ? (
-          <ControlPanel status={status} setStatus={setStatus} />
+          <ControlPanel
+            status={status}
+            setStatus={setStatus}
+            runtimeRefreshNotice={runtimeRefreshNotice}
+            setRuntimeRefreshNotice={setRuntimeRefreshNotice}
+          />
         ) : (
-          <SettingsPanel />
+          <SettingsPanel
+            runtimeRefreshNotice={runtimeRefreshNotice}
+            setRuntimeRefreshNotice={setRuntimeRefreshNotice}
+          />
         )}
       </div>
 
       {view === 'control' && (
-        <BottomBar status={status} setStatus={setStatus} onSettings={() => setView('settings')} />
+        <BottomBar
+          status={status}
+          setStatus={setStatus}
+          onSettings={() => setView('settings')}
+          onEngineStarted={() => setRuntimeRefreshNotice(null)}
+        />
       )}
 
       <Toast />
@@ -226,10 +260,14 @@ function getProviderFieldLabel(fieldKey: string, field: ProviderSchemaField) {
 
 function ControlPanel({
   status,
-  setStatus
+  setStatus,
+  runtimeRefreshNotice,
+  setRuntimeRefreshNotice
 }: {
   status: EngineStatus
   setStatus: (s: EngineStatus) => void
+  runtimeRefreshNotice: RuntimeRefreshNotice | null
+  setRuntimeRefreshNotice: (notice: RuntimeRefreshNotice | null) => void
 }) {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const logRef = useRef<HTMLDivElement>(null)
@@ -268,15 +306,23 @@ function ControlPanel({
   const handleAppTypeChange = useCallback(
     async (next: AppType) => {
       if (status === 'running') return
+      const currentSettings = (await window.electron?.invoke('settings:getAll')) as
+        | AppSettings
+        | undefined
+      const nextSettings = currentSettings ? { ...currentSettings, appType: next } : undefined
       setAppType(next)
       await window.electron?.invoke('settings:set', { appType: next })
-      await window.electron?.invoke('engine:updateConfig', {
-        ...((await window.electron?.invoke('settings:getAll')) as AppSettings),
-        appType: next
-      })
+      if (nextSettings) {
+        await window.electron?.invoke('engine:updateConfig', nextSettings)
+        const labels = getRuntimeSensitiveChangeLabels(currentSettings, nextSettings)
+        if (labels.length > 0) {
+          setRuntimeRefreshNotice(createRuntimeRefreshNotice(labels, false))
+        }
+      }
       await reloadRegionsForApp(next)
+      showToast('目标应用已切换，下次启动引擎时会按新配置生效', 'success')
     },
-    [reloadRegionsForApp, status]
+    [reloadRegionsForApp, setRuntimeRefreshNotice, status]
   )
 
   const handleOpenWizard = useCallback(async () => {
@@ -333,6 +379,8 @@ function ControlPanel({
 
   return (
     <div className="fade-in">
+      {runtimeRefreshNotice ? <RuntimeRefreshBanner notice={runtimeRefreshNotice} /> : null}
+
       <div className={`status-indicator ${status}`}>
         <div className={`status-dot ${status}`} />
         <span className="status-text">{statusLabel}</span>
@@ -380,6 +428,39 @@ interface TargetAppQuickCardProps {
   running: boolean
   onAppTypeChange: (t: AppType) => void
   onOpenWizard: () => void
+}
+
+function RuntimeRefreshBanner({
+  notice
+}: {
+  notice: RuntimeRefreshNotice
+}): React.JSX.Element {
+  const isWarning = notice.tone === 'warning'
+
+  return (
+    <div
+      className="card"
+      style={{
+        marginBottom: 12,
+        border: `1px solid ${isWarning ? 'rgba(251, 191, 36, 0.35)' : 'rgba(59, 130, 246, 0.28)'}`,
+        background: isWarning ? 'rgba(120, 53, 15, 0.22)' : 'rgba(30, 41, 59, 0.8)'
+      }}
+    >
+      <div
+        style={{
+          fontSize: 13,
+          fontWeight: 700,
+          color: isWarning ? '#fbbf24' : '#93c5fd',
+          marginBottom: 6
+        }}
+      >
+        {notice.title}
+      </div>
+      <div className="form-hint" style={{ marginTop: 0 }}>
+        {notice.message}
+      </div>
+    </div>
+  )
 }
 
 // 首屏的"目标应用 + 框选"快捷卡片：让新用户开箱即用，不用先翻设置。
@@ -487,11 +568,13 @@ function TargetAppQuickCard({
 function BottomBar({
   status,
   setStatus,
-  onSettings
+  onSettings,
+  onEngineStarted
 }: {
   status: EngineStatus
   setStatus: (s: EngineStatus) => void
   onSettings: () => void
+  onEngineStarted: () => void
 }) {
   const handleStart = useCallback(async () => {
     const settings = (await window.electron?.invoke('settings:getAll')) as AppSettings | undefined
@@ -516,12 +599,13 @@ function BottomBar({
     const result = await window.electron?.invoke('engine:start', settings)
     if (result?.success) {
       setStatus('running')
+      onEngineStarted()
       showToast(t('toast.engineStarted'), 'success')
     } else {
       setStatus('error')
       showToast(result?.error || t('toast.startFailed'), 'error')
     }
-  }, [setStatus])
+  }, [onEngineStarted, setStatus])
 
   const handleStop = useCallback(async () => {
     await window.electron?.invoke('engine:stop')
@@ -551,7 +635,13 @@ function BottomBar({
   )
 }
 
-function SettingsPanel() {
+function SettingsPanel({
+  runtimeRefreshNotice,
+  setRuntimeRefreshNotice
+}: {
+  runtimeRefreshNotice: RuntimeRefreshNotice | null
+  setRuntimeRefreshNotice: (notice: RuntimeRefreshNotice | null) => void
+}) {
   // 设置页只关心 vision 模型配置和 chat provider；目标应用 + 框选已经搬到首屏
   // ControlPanel 里的 TargetAppQuickCard，避免两处冗余配置造成困惑。
   const [visionApiKey, setVisionApiKey] = useState('')
@@ -598,6 +688,9 @@ function SettingsPanel() {
   }, [])
 
   const handleSaveVision = useCallback(async () => {
+    const currentSettings = (await window.electron?.invoke('settings:getAll')) as
+      | AppSettings
+      | undefined
     const payload: Partial<AppSettings> = {
       vision: {
         apiKey: visionApiKey,
@@ -614,17 +707,22 @@ function SettingsPanel() {
       setVisionModel(savedSettings.vision.model || DEFAULT_VISION_MODEL)
       setVisionBaseURL(savedSettings.vision.baseURL || DEFAULT_VISION_BASE_URL)
     }
-    await window.electron?.invoke('engine:updateConfig', {
-      ...(savedSettings || ((await window.electron?.invoke('settings:getAll')) as AppSettings)),
-      ...payload,
-      vision: {
-        apiKey: visionApiKey,
-        model: visionModel,
-        baseURL: visionBaseURL
-      }
-    })
-    showToast(t('settings.saved'), 'success')
-  }, [visionApiKey, visionModel, visionBaseURL])
+    const nextSettings = savedSettings || currentSettings
+    const engineStatus = (await window.electron?.invoke('engine:status')) as
+      | { running?: boolean }
+      | undefined
+    const isRunning = Boolean(engineStatus?.running)
+    if (nextSettings && !isRunning) {
+      await window.electron?.invoke('engine:updateConfig', nextSettings)
+    }
+
+    const labels = getRuntimeSensitiveChangeLabels(currentSettings, nextSettings)
+    if (labels.length > 0) {
+      setRuntimeRefreshNotice(createRuntimeRefreshNotice(labels, isRunning))
+    }
+
+    showToast(isRunning ? '视觉配置已保存，停止并重新启动引擎后生效' : t('settings.saved'), 'success')
+  }, [setRuntimeRefreshNotice, visionApiKey, visionModel, visionBaseURL])
 
   const handleInstallProvider = useCallback(async () => {
     if (!providerManifestUrl.trim()) {
@@ -632,6 +730,9 @@ function SettingsPanel() {
       return
     }
 
+    const currentSettings = (await window.electron?.invoke('settings:getAll')) as
+      | AppSettings
+      | undefined
     setInstalling(true)
     try {
       const result = await window.electron?.invoke(
@@ -647,11 +748,21 @@ function SettingsPanel() {
       setInstalledProvider(result.installed)
       setInstalledManifest(result.manifest)
       setProviderConfig((prev) => applyManifestDefaults(result.manifest as ProviderManifest, prev))
+      const nextSettings = (await window.electron?.invoke('settings:getAll')) as
+        | AppSettings
+        | undefined
+      const engineStatus = (await window.electron?.invoke('engine:status')) as
+        | { running?: boolean }
+        | undefined
+      const labels = getRuntimeSensitiveChangeLabels(currentSettings, nextSettings)
+      if (labels.length > 0) {
+        setRuntimeRefreshNotice(createRuntimeRefreshNotice(labels, Boolean(engineStatus?.running)))
+      }
       showToast(t('settings.providerInstall.success'), 'success')
     } finally {
       setInstalling(false)
     }
-  }, [providerManifestUrl])
+  }, [providerManifestUrl, setRuntimeRefreshNotice])
 
   const handleSaveProvider = useCallback(async () => {
     if (!installedManifest) {
@@ -671,6 +782,9 @@ function SettingsPanel() {
 
     // 内置 doubao 默认模式：保存聊天服务配置，但 installed 仍为 null。
     // 这样下次仍走内置 doubao，同时保留聊天服务独立模型配置。
+    const currentSettings = (await window.electron?.invoke('settings:getAll')) as
+      | AppSettings
+      | undefined
     await window.electron?.invoke('settings:set', {
       chatProvider: {
         manifestUrl: providerManifestUrl,
@@ -679,8 +793,27 @@ function SettingsPanel() {
       }
     })
 
-    showToast(t('settings.provider.saved'), 'success')
-  }, [installedManifest, installedProvider, providerConfig, providerManifestUrl, isBuiltinDefault])
+    const nextSettings = (await window.electron?.invoke('settings:getAll')) as
+      | AppSettings
+      | undefined
+    const engineStatus = (await window.electron?.invoke('engine:status')) as
+      | { running?: boolean }
+      | undefined
+    const isRunning = Boolean(engineStatus?.running)
+    const labels = getRuntimeSensitiveChangeLabels(currentSettings, nextSettings)
+    if (labels.length > 0) {
+      setRuntimeRefreshNotice(createRuntimeRefreshNotice(labels, isRunning))
+    }
+
+    showToast(isRunning ? '聊天服务配置已保存，停止并重新启动引擎后生效' : t('settings.provider.saved'), 'success')
+  }, [
+    installedManifest,
+    installedProvider,
+    isBuiltinDefault,
+    providerConfig,
+    providerManifestUrl,
+    setRuntimeRefreshNotice
+  ])
 
   const handleTestConnection = useCallback(async () => {
     if (!visionApiKey) return
@@ -705,6 +838,8 @@ function SettingsPanel() {
 
   return (
     <div className="slide-up settings-stack">
+      {runtimeRefreshNotice ? <RuntimeRefreshBanner notice={runtimeRefreshNotice} /> : null}
+
       <VisionSettingsCard
         apiKey={visionApiKey}
         model={visionModel}
@@ -993,14 +1128,6 @@ function normalizeSystemPromptPresets(
   return { prompts, activeId }
 }
 
-function getActiveSystemPromptContent(providerConfig: Record<string, any>): string {
-  const { prompts, activeId } = normalizeSystemPromptPresets(
-    providerConfig,
-    typeof providerConfig.systemPrompt === 'string' ? providerConfig.systemPrompt : ''
-  )
-  return prompts.find((prompt) => prompt.id === activeId)?.content || ''
-}
-
 function SystemPromptManager({
   providerConfig,
   fallbackContent,
@@ -1218,3 +1345,50 @@ function Toast() {
 }
 
 export default App
+
+function getRuntimeSensitiveChangeLabels(
+  previous: AppSettings | undefined,
+  next: AppSettings | undefined
+): string[] {
+  if (!previous || !next) return []
+
+  const labels: string[] = []
+  if (previous.appType !== next.appType) {
+    labels.push('目标应用')
+  }
+  if (
+    previous.vision.apiKey !== next.vision.apiKey ||
+    previous.vision.model !== next.vision.model ||
+    previous.vision.baseURL !== next.vision.baseURL
+  ) {
+    labels.push('视觉模型配置')
+  }
+  if (
+    previous.chatProvider.manifestUrl !== next.chatProvider.manifestUrl ||
+    JSON.stringify(previous.chatProvider.installed) !== JSON.stringify(next.chatProvider.installed) ||
+    JSON.stringify(previous.chatProvider.config) !== JSON.stringify(next.chatProvider.config)
+  ) {
+    labels.push('聊天服务配置')
+  }
+  return labels
+}
+
+function createRuntimeRefreshNotice(
+  labels: string[],
+  isRunning: boolean
+): RuntimeRefreshNotice | null {
+  if (labels.length === 0) return null
+  const joined = labels.join('、')
+  if (isRunning) {
+    return {
+      tone: 'warning',
+      title: '当前运行时尚未刷新',
+      message: `${joined}已保存。当前引擎继续使用旧配置，请先停止再重新启动，随后才会按新配置生效。`
+    }
+  }
+  return {
+    tone: 'info',
+    title: '新配置将在下次启动时生效',
+    message: `${joined}已保存。当前引擎未运行，下次启动时会按最新配置初始化。`
+  }
+}
